@@ -7,6 +7,9 @@ from app.core.firebase import initialize_firebase
 from app.core.middleware import configure_middleware
 from app.api.v1 import auth as auth_router
 from app.api.v1 import agent as agent_router
+from app.api.v1 import documents as documents_router
+from app.api.v1 import students as students_router
+from app.api.v1 import simple_assessments as assessments_router
 
 def create_app() -> FastAPI:
     """
@@ -27,6 +30,9 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(auth_router.router, prefix="/v1/auth", tags=["Authentication"])
     app.include_router(agent_router.router, prefix="/v1/agent", tags=["Agent"])
+    app.include_router(documents_router.router, prefix="/v1/documents", tags=["Documents"])
+    app.include_router(students_router.router, prefix="/v1/students", tags=["Students"])
+    app.include_router(assessments_router.router, prefix="/v1/assessments", tags=["Assessments"])
     
     # Add a root health check
     @app.get("/", tags=["Health"])

@@ -15,6 +15,11 @@ from .requests import (
     AgentResponse,
     HealthResponse,
     
+    # Document management models
+    DocumentUploadResponse,
+    DocumentIndexingStatus,
+    DocumentMetadata,
+    
     # Content generation models
     LocalContentRequest,
     GeneratedContentResponse,
@@ -32,6 +37,11 @@ __all__ = [
     "AgentPrompt",
     "AgentResponse",
     "HealthResponse",
+    
+    # Document management models
+    "DocumentUploadResponse",
+    "DocumentIndexingStatus", 
+    "DocumentMetadata",
     
     # Content generation models
     "LocalContentRequest",

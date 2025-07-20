@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     google_cloud_project: str = ""
     google_cloud_location: str = "us-west1"
+    
+    # Vertex AI RAG Configuration
+    vertex_ai_search_engine_id: str = ""
+    vertex_ai_datastore_id: str = "teacher-documents-datastore"
 
     class Config:
         # This tells Pydantic to load variables from a .env file

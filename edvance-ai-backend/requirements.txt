@@ -13,9 +13,38 @@ firebase-admin
 google-cloud-aiplatform
 google-cloud-speech
 google-cloud-storage
+google-cloud-documentai
+google-cloud-discoveryengine
 
 # For handling multipart/form-data (file uploads)
 python-multipart
+
+# Background task processing
+celery[redis]
+redis
+
+# File processing
+PyPDF2
+pillow
+python-magic
+pytesseract
+python-docx
+
+# RAG and Vector Database
+chromadb
+langchain
+langchain-google-vertexai
+langchain-community
+langchain-chroma
+
+# AI and Embeddings
+openai
+tiktoken
+sentence-transformers
+
+# Data processing
+numpy
+pandas
 
 # Google Agent Development Kit
 google-adk

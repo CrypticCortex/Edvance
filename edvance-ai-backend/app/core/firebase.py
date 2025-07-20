@@ -32,4 +32,4 @@ initialize_firebase()
 # Create easy-to-import instances of Firebase services
 db = firestore.client()
 firebase_auth = auth
-bucket = storage.bucket()
+storage_bucket = storage.bucket()
