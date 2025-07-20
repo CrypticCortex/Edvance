@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-g">
+    <title>Firebase ID Token Generator</title>
+    <style>
+        body { font-family: sans-serif; padding: 2em; line-height: 1.6; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 2em; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        input { width: 95%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        #token-display { margin-top: 20px; padding: 10px; background: #e9ecef; border: 1px solid #ced4da; border-radius: 4px; word-wrap: break-word; }
+        #status { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Firebase ID Token Generator</h2>
+        <p>Use the user you created via the API to log in and get an ID token.</p>
+        
+        <input type="email" id="email" placeholder="Email">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="login()">Get ID Token</button>
+
+        <p id="status"></p>
+        <div id="token-display">Your ID token will appear here...</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+
+        // =========================================================================================
+        // === PASTE YOUR FIREBASE CONFIG OBJECT HERE ===
+        const firebaseConfig = {
+            apiKey: "AIzaSyDYIKO6nZa0VH1Dg9piIKzcJrVJCub6I6s",
+            authDomain: "skilful-berm-466510-h9.firebaseapp.com",
+            projectId: "skilful-berm-466510-h9",
+            storageBucket: "skilful-berm-466510-h9.firebasestorage.app",
+            messagingSenderId: "808751785929",
+            appId: "1:808751785929:web:9fb391fc5f44a62adfea18",
+            measurementId: "G-G74C3HHJZ3"
+        };
+
+        // =========================================================================================
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        window.login = async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const statusEl = document.getElementById('status');
+            const tokenEl = document.getElementById('token-display');
+
+            statusEl.textContent = 'Logging in...';
+            tokenEl.textContent = '';
+
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                const idToken = await user.getIdToken(true); // 'true' forces a refresh
+
+                statusEl.textContent = 'Success! Token generated.';
+                statusEl.style.color = 'green';
+                tokenEl.textContent = idToken;
+                
+            } catch (error) {
+                statusEl.textContent = `Error: ${error.message}`;
+                statusEl.style.color = 'red';
+                tokenEl.textContent = 'Failed to get token.';
+            }
+        }
+    </script>
+</body>
+</html>

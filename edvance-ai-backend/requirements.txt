@@ -1,0 +1,18 @@
+# FILE: requirements.txt
+
+# FastAPI Framework
+fastapi
+uvicorn[standard]
+
+# Pydantic for data models and settings management
+pydantic
+pydantic-settings
+
+# Google Cloud and Firebase
+firebase-admin
+google-cloud-aiplatform
+google-cloud-speech
+google-cloud-storage
+
+# For handling multipart/form-data (file uploads)
+python-multipart

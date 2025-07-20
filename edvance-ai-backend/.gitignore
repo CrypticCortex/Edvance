@@ -1,0 +1,15 @@
+# FILE: .gitignore
+
+# Environment
+.env
+
+# Service Account Key - IMPORTANT!
+svc-acc-key.json
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
