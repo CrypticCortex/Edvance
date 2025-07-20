@@ -6,7 +6,7 @@ import logging
 
 from app.models.student import AssessmentConfig, Assessment
 from app.core.auth import get_current_user
-from app.services.simple_assessment_service import simple_assessment_service
+from app.services.enhanced_assessment_service import enhanced_assessment_service
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ async def create_assessment_config(
                 detail="Target grade must be between 1 and 12"
             )
         
-        config = await simple_assessment_service.create_assessment_config(
+        config = await enhanced_assessment_service.create_assessment_config(
             name=config_data["name"],
             subject=config_data["subject"],
             target_grade=config_data["target_grade"],
@@ -98,7 +98,7 @@ async def get_my_assessment_configs(
     teacher_uid = current_user["uid"]
     
     try:
-        configs = await simple_assessment_service.get_teacher_assessment_configs(
+        configs = await enhanced_assessment_service.get_teacher_assessment_configs(
             teacher_uid=teacher_uid,
             subject_filter=subject
         )
@@ -136,7 +136,7 @@ async def generate_assessment_from_config(
     
     try:
         # Get the configuration by ID directly
-        config = await simple_assessment_service.get_assessment_config_by_id(
+        config = await enhanced_assessment_service.get_assessment_config_by_id(
             config_id=config_id,
             teacher_uid=teacher_uid
         )
@@ -147,8 +147,8 @@ async def generate_assessment_from_config(
                 detail="Assessment configuration not found"
             )
         
-        # Generate the assessment
-        assessment = await simple_assessment_service.create_sample_assessment(config)
+        # Generate the assessment using RAG and AI
+        assessment = await enhanced_assessment_service.create_rag_assessment(config)
         
         logger.info(f"Generated assessment {assessment.assessment_id} from config {config_id}")
         return assessment
@@ -180,7 +180,7 @@ async def get_assessment(
     teacher_uid = current_user["uid"]
     
     try:
-        assessment = await simple_assessment_service.get_assessment_by_id(assessment_id)
+        assessment = await enhanced_assessment_service.get_assessment_by_id(assessment_id)
         
         if not assessment:
             raise HTTPException(
@@ -230,7 +230,7 @@ async def get_available_topics(
     teacher_uid = current_user["uid"]
     
     try:
-        topics = await simple_assessment_service.get_available_topics(
+        topics = await enhanced_assessment_service.get_available_topics(
             subject=subject,
             grade=grade,
             teacher_uid=teacher_uid
@@ -261,7 +261,7 @@ async def get_assessment_summary(
     teacher_uid = current_user["uid"]
     
     try:
-        configs = await simple_assessment_service.get_teacher_assessment_configs(teacher_uid)
+        configs = await enhanced_assessment_service.get_teacher_assessment_configs(teacher_uid)
         
         # Calculate statistics
         total_configs = len(configs)

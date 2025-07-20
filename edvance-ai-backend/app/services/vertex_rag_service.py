@@ -1,287 +1,343 @@
 # FILE: app/services/vertex_rag_service.py
 
-from __future__ import annotations
 import logging
-import asyncio
 import uuid
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+import asyncio
+from datetime import datetime
 
-from google.cloud import discoveryengine_v1
-from google.cloud import documentai
-from google.cloud import storage
-from google.api_core import retry
+from google.cloud import aiplatform
+from vertexai.language_models import TextEmbeddingModel
+import vertexai
 
 from app.core.config import settings
 from app.core.firebase import db
+from app.models.rag_models import DocumentChunk, RAGQuery, RAGResult, VectorSearchMetrics
 
 logger = logging.getLogger(__name__)
 
-class VertexRAGService:
-    """Service for managing Vertex AI RAG operations including document indexing and search."""
+class VertexAIRAGService:
+    """RAG service using Vertex AI Vector Search and Embeddings."""
     
     def __init__(self):
         self.project_id = settings.google_cloud_project
-        # Discovery Engine requires "global" location, not regional
-        self.location = "global"
-        self.storage_client = storage.Client()
+        self.location = settings.google_cloud_location
+        self.collection_name = "document_embeddings"
+        self.embedding_model = None
+        self._initialize_vertex_ai()
         
-        # Use the correct clients for different operations
-        self.document_client = discoveryengine_v1.DocumentServiceClient()
-        self.datastore_client = discoveryengine_v1.DataStoreServiceClient()
-        self.search_client = discoveryengine_v1.SearchServiceClient()
-        
-        # Initialize Vertex AI Search datastore (we'll create this)
-        self.datastore_id = "teacher-documents-datastore"
-        self.serving_config_id = "default_serving_config"
-        
-    async def create_datastore_if_not_exists(self) -> str:
-        """
-        Create a Vertex AI Search datastore for storing teacher documents.
-        
-        Returns:
-            The datastore ID
-        """
+    def _initialize_vertex_ai(self):
+        """Initialize Vertex AI."""
         try:
-            # Check if datastore already exists using the correct client
-            datastore_path = self.datastore_client.data_store_path(
+            vertexai.init(
                 project=self.project_id,
-                location=self.location,
-                data_store=self.datastore_id
+                location=self.location
             )
             
-            # Try to get the datastore
-            try:
-                datastore = self.datastore_client.get_data_store(name=datastore_path)
-                logger.info(f"Datastore {self.datastore_id} already exists")
-                return self.datastore_id
-            except Exception:
-                # Datastore doesn't exist, create it
-                logger.info(f"Creating new datastore: {self.datastore_id}")
-                
-                parent = self.datastore_client.collection_path(
-                    project=self.project_id,
-                    location=self.location,
-                    collection="default_collection"
-                )
-                
-                data_store = discoveryengine_v1.DataStore(
-                    display_name="Teacher Documents Datastore",
-                    industry_vertical=discoveryengine_v1.IndustryVertical.GENERIC,
-                    solution_types=[discoveryengine_v1.SolutionType.SOLUTION_TYPE_SEARCH],
-                    content_config=discoveryengine_v1.DataStore.ContentConfig.CONTENT_REQUIRED,
-                )
-                
-                operation = self.datastore_client.create_data_store(
-                    parent=parent,
-                    data_store=data_store,
-                    data_store_id=self.datastore_id
-                )
-                
-                # Wait for the operation to complete
-                result = operation.result(timeout=300)  # 5 minutes timeout
-                logger.info(f"Created datastore: {result.name}")
-                return self.datastore_id
-                
-        except Exception as e:
-            logger.error(f"Failed to create/get datastore: {e}")
-            raise
-    
-    async def import_document_to_vertex_ai(
-        self, 
-        document_id: str, 
-        firebase_storage_url: str,
-        metadata: Dict[str, Any]
-    ) -> str:
-        """
-        Import a document from Firebase Storage to Vertex AI Search.
-        
-        Args:
-            document_id: Unique document identifier
-            firebase_storage_url: Firebase Storage URL of the document
-            metadata: Document metadata (subject, teacher_uid, etc.)
+            # Initialize embedding model
+            self.embedding_model = TextEmbeddingModel.from_pretrained("text-embedding-005")
             
-        Returns:
-            The Vertex AI document ID
-        """
-        try:
-            # Ensure datastore exists
-            await self.create_datastore_if_not_exists()
-            
-            # Create document for Vertex AI Search
-            parent = self.document_client.branch_path(
-                project=self.project_id,
-                location=self.location,
-                data_store=self.datastore_id,
-                branch="default_branch"
-            )
-            
-            # Convert Firebase Storage URL to GCS URI format
-            import urllib.parse
-            
-            # The Firebase Storage URL format is: https://storage.googleapis.com/bucket-name/path
-            if firebase_storage_url.startswith("https://storage.googleapis.com/"):
-                # Extract the bucket name and path
-                url_parts = firebase_storage_url.replace("https://storage.googleapis.com/", "").split("/", 1)
-                bucket_name = url_parts[0]
-                file_path = url_parts[1] if len(url_parts) > 1 else ""
-                
-                # URL decode the file path to handle spaces and special characters correctly
-                file_path = urllib.parse.unquote(file_path)
-                
-                # Create the GCS URI
-                gcs_uri = f"gs://{bucket_name}/{file_path}"
-            else:
-                # Fallback for other URL formats
-                gcs_uri = firebase_storage_url.replace(
-                    "https://storage.googleapis.com/", "gs://"
-                ).replace(
-                    f"https://{settings.firebase_storage_bucket}.appspot.com/", 
-                    f"gs://{settings.firebase_storage_bucket}/"
-                )
-            
-            # Create the document
-            document = discoveryengine_v1.Document(
-                id=document_id,
-                content=discoveryengine_v1.Document.Content(
-                    uri=gcs_uri,
-                    mime_type=metadata.get("file_type", "application/pdf")
-                ),
-                struct_data={
-                    "subject": metadata.get("subject", ""),
-                    "teacher_uid": metadata.get("teacher_uid", ""),
-                    "filename": metadata.get("filename", ""),
-                    "upload_date": metadata.get("upload_date", ""),
-                }
-            )
-            
-            # Import the document
-            request = discoveryengine_v1.CreateDocumentRequest(
-                parent=parent,
-                document=document,
-                document_id=document_id
-            )
-            
-            operation = self.document_client.create_document(request=request)
-            result = operation  # This is synchronous for document creation
-            
-            logger.info(f"Successfully imported document {document_id} to Vertex AI")
-            return document_id
+            logger.info("Vertex AI RAG service initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to import document {document_id} to Vertex AI: {e}")
-            raise
+            logger.error(f"Failed to initialize Vertex AI RAG: {str(e)}")
+            # Don't raise, allow graceful fallback
+            self.embedding_model = None
     
-    async def get_indexing_status(self, document_id: str) -> Dict[str, Any]:
-        """
-        Get the indexing status of a document in Vertex AI Search.
-        
-        Args:
-            document_id: The document ID
-            
-        Returns:
-            Status information including progress and completion status
-        """
+    async def add_chunks(self, chunks: List[DocumentChunk]) -> bool:
+        """Add document chunks to Firestore with embeddings."""
         try:
-            document_path = self.document_client.document_path(
-                project=self.project_id,
-                location=self.location,
-                data_store=self.datastore_id,
-                branch="default_branch",
-                document=document_id
-            )
+            if not chunks:
+                return True
+                
+            if not self.embedding_model:
+                logger.warning("Embedding model not available, saving chunks without embeddings")
+                return await self._save_chunks_without_embeddings(chunks)
             
-            document = self.document_client.get_document(name=document_path)
+            # Generate embeddings for all chunks
+            texts = [chunk.content for chunk in chunks]
+            embeddings = await self._generate_embeddings(texts)
             
-            # For Vertex AI Search, once document is created, it's typically indexed quickly
-            # We can check if the document exists and assume it's indexed
-            return {
-                "status": "completed",
-                "progress_percentage": 100,
-                "vertex_ai_document_id": document.id,
-                "indexed_at": datetime.utcnow()
-            }
+            # Store chunks with embeddings in Firestore
+            batch = db.batch()
+            
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding_vector = embedding
+                
+                doc_ref = db.collection(self.collection_name).document(chunk.chunk_id)
+                chunk_data = chunk.dict()
+                batch.set(doc_ref, chunk_data)
+            
+            batch.commit()
+            
+            logger.info(f"Added {len(chunks)} chunks with embeddings to Firestore")
+            return True
             
         except Exception as e:
-            logger.error(f"Failed to get indexing status for document {document_id}: {e}")
-            return {
-                "status": "failed",
-                "progress_percentage": 0,
-                "error": str(e)
-            }
+            logger.error(f"Failed to add chunks: {str(e)}")
+            return False
     
-    async def search_documents(
-        self, 
-        query: str, 
-        teacher_uid: str,
-        subject_filter: Optional[str] = None,
-        limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """
-        Search for documents using Vertex AI Search.
-        
-        Args:
-            query: Search query
-            teacher_uid: Filter by teacher UID
-            subject_filter: Optional subject filter
-            limit: Maximum number of results
-            
-        Returns:
-            List of search results with content and metadata
-        """
+    async def _save_chunks_without_embeddings(self, chunks: List[DocumentChunk]) -> bool:
+        """Fallback to save chunks without embeddings."""
         try:
-            serving_config = self.search_client.serving_config_path(
-                project=self.project_id,
-                location=self.location,
-                data_store=self.datastore_id,
-                serving_config=self.serving_config_id
-            )
+            batch = db.batch()
             
-            # Build filter - use the correct syntax for Vertex AI Search structured data
-            # For now, let's test without filters to verify basic search works
-            filter_str = ""
-            # filter_expressions = [f'struct_data.teacher_uid: ANY("{teacher_uid}")']
-            # if subject_filter:
-            #     filter_expressions.append(f'struct_data.subject: ANY("{subject_filter}")')
-            # filter_str = " AND ".join(filter_expressions)
+            for chunk in chunks:
+                doc_ref = db.collection(self.collection_name).document(chunk.chunk_id)
+                chunk_data = chunk.dict()
+                batch.set(doc_ref, chunk_data)
             
-            request = discoveryengine_v1.SearchRequest(
-                serving_config=serving_config,
-                query=query,
-                page_size=limit,
-                content_search_spec=discoveryengine_v1.SearchRequest.ContentSearchSpec(
-                    snippet_spec=discoveryengine_v1.SearchRequest.ContentSearchSpec.SnippetSpec(
-                        return_snippet=True
-                    ),
-                    summary_spec=discoveryengine_v1.SearchRequest.ContentSearchSpec.SummarySpec(
-                        summary_result_count=3,
-                        include_citations=True
+            batch.commit()
+            logger.info(f"Saved {len(chunks)} chunks without embeddings")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save chunks without embeddings: {str(e)}")
+            return False
+    
+    async def _generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using Vertex AI."""
+        try:
+            if not self.embedding_model:
+                return [[0.0] * 768 for _ in texts]  # Return dummy embeddings
+            
+            # Batch embeddings for efficiency
+            embeddings = []
+            batch_size = 5  # Process 5 texts at a time
+            
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                batch_embeddings = self.embedding_model.get_embeddings(batch_texts)
+                
+                for embedding in batch_embeddings:
+                    embeddings.append(embedding.values)
+                
+                # Small delay to avoid rate limits
+                if i + batch_size < len(texts):
+                    await asyncio.sleep(0.1)
+            
+            return embeddings
+            
+        except Exception as e:
+            logger.error(f"Failed to generate embeddings: {str(e)}")
+            return [[0.0] * 768 for _ in texts]  # Return dummy embeddings as fallback
+    
+    async def search_similar_chunks(self, query: RAGQuery) -> List[RAGResult]:
+        """Search for similar chunks using vector similarity."""
+        try:
+            start_time = datetime.utcnow()
+            
+            if not self.embedding_model:
+                logger.warning("Embedding model not available, using text-based search")
+                return await self._text_based_search(query)
+            
+            # Generate embedding for query
+            query_embeddings = await self._generate_embeddings([query.query_text])
+            query_embedding = query_embeddings[0]
+            
+            # Build Firestore query with filters
+            collection_ref = db.collection(self.collection_name)
+            firestore_query = collection_ref
+            
+            # Apply filters
+            if query.subject:
+                firestore_query = firestore_query.where("metadata.subject", "==", query.subject)
+            if query.grade_level:
+                firestore_query = firestore_query.where("metadata.grade_level", "==", query.grade_level)
+            
+            # Get all matching documents
+            docs = firestore_query.stream()
+            
+            # Calculate similarity scores
+            candidates = []
+            for doc in docs:
+                doc_data = doc.to_dict()
+                
+                if not doc_data.get("embedding_vector"):
+                    continue
+                
+                # Calculate cosine similarity
+                similarity = self._calculate_cosine_similarity(
+                    query_embedding, 
+                    doc_data["embedding_vector"]
+                )
+                
+                if similarity >= query.similarity_threshold:
+                    chunk = DocumentChunk(**doc_data)
+                    result = RAGResult(
+                        chunk=chunk,
+                        similarity_score=similarity,
+                        document_metadata={
+                            "filename": chunk.metadata.get("filename", ""),
+                            "document_id": chunk.document_id
+                        }
                     )
-                )
-            )
+                    candidates.append(result)
             
-            # Only add filter if it's not empty
-            if filter_str:
-                request.filter = filter_str
+            # Sort by similarity and return top results
+            candidates.sort(key=lambda x: x.similarity_score, reverse=True)
+            results = candidates[:query.max_results]
             
-            response = self.search_client.search(request=request)
+            # Calculate metrics
+            end_time = datetime.utcnow()
+            query_time = (end_time - start_time).total_seconds() * 1000
             
-            results = []
-            for result in response.results:
-                doc_data = {
-                    "document_id": result.id,
-                    "title": result.document.struct_data.get("filename", "Unknown"),
-                    "subject": result.document.struct_data.get("subject", ""),
-                    "snippet": getattr(result.document, "derived_struct_data", {}).get("snippet", ""),
-                    "relevance_score": getattr(result, "relevance_score", 0.0)
-                }
-                results.append(doc_data)
-            
+            logger.info(f"Vector search completed: {len(results)} results, {query_time:.2f}ms")
             return results
             
         except Exception as e:
-            logger.error(f"Failed to search documents: {e}")
+            logger.error(f"Vector search failed: {str(e)}")
             return []
+    
+    async def _text_based_search(self, query: RAGQuery) -> List[RAGResult]:
+        """Fallback text-based search when embeddings aren't available."""
+        try:
+            collection_ref = db.collection(self.collection_name)
+            firestore_query = collection_ref
+            
+            # Apply filters
+            if query.subject:
+                firestore_query = firestore_query.where("metadata.subject", "==", query.subject)
+            if query.grade_level:
+                firestore_query = firestore_query.where("metadata.grade_level", "==", query.grade_level)
+            
+            docs = firestore_query.stream()
+            
+            # Simple text matching
+            candidates = []
+            query_words = set(query.query_text.lower().split())
+            
+            for doc in docs:
+                doc_data = doc.to_dict()
+                content = doc_data.get("content", "").lower()
+                content_words = set(content.split())
+                
+                # Calculate word overlap as similarity
+                overlap = len(query_words.intersection(content_words))
+                similarity = overlap / max(len(query_words), 1)
+                
+                if similarity >= query.similarity_threshold:
+                    chunk = DocumentChunk(**doc_data)
+                    result = RAGResult(
+                        chunk=chunk,
+                        similarity_score=similarity,
+                        document_metadata={
+                            "filename": chunk.metadata.get("filename", ""),
+                            "document_id": chunk.document_id
+                        }
+                    )
+                    candidates.append(result)
+            
+            # Sort and return top results
+            candidates.sort(key=lambda x: x.similarity_score, reverse=True)
+            return candidates[:query.max_results]
+            
+        except Exception as e:
+            logger.error(f"Text-based search failed: {str(e)}")
+            return []
+    
+    def _calculate_cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Calculate cosine similarity between two vectors."""
+        try:
+            import numpy as np
+            
+            vec1 = np.array(vec1)
+            vec2 = np.array(vec2)
+            
+            dot_product = np.dot(vec1, vec2)
+            magnitude1 = np.linalg.norm(vec1)
+            magnitude2 = np.linalg.norm(vec2)
+            
+            if magnitude1 == 0 or magnitude2 == 0:
+                return 0.0
+            
+            return float(dot_product / (magnitude1 * magnitude2))
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate similarity: {str(e)}")
+            return 0.0
+    
+    async def get_chunk_by_id(self, chunk_id: str) -> Optional[DocumentChunk]:
+        """Get a specific chunk by ID."""
+        try:
+            doc_ref = db.collection(self.collection_name).document(chunk_id)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                return DocumentChunk(**doc.to_dict())
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get chunk {chunk_id}: {str(e)}")
+            return None
+    
+    async def delete_document_chunks(self, document_id: str) -> bool:
+        """Delete all chunks for a document."""
+        try:
+            query = db.collection(self.collection_name).where("document_id", "==", document_id)
+            docs = query.stream()
+            
+            batch = db.batch()
+            chunk_count = 0
+            
+            for doc in docs:
+                batch.delete(doc.reference)
+                chunk_count += 1
+            
+            if chunk_count > 0:
+                batch.commit()
+                logger.info(f"Deleted {chunk_count} chunks for document {document_id}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to delete chunks for document {document_id}: {str(e)}")
+            return False
+    
+    async def get_collection_stats(self) -> Dict[str, Any]:
+        """Get statistics about the vector collection."""
+        try:
+            # Count total documents
+            collection_ref = db.collection(self.collection_name)
+            docs = collection_ref.stream()
+            
+            total_count = 0
+            subjects = set()
+            grades = set()
+            with_embeddings = 0
+            
+            for doc in docs:
+                total_count += 1
+                doc_data = doc.to_dict()
+                metadata = doc_data.get("metadata", {})
+                
+                if doc_data.get("embedding_vector"):
+                    with_embeddings += 1
+                
+                if metadata.get("subject"):
+                    subjects.add(metadata["subject"])
+                if metadata.get("grade_level"):
+                    grades.add(metadata["grade_level"])
+            
+            return {
+                "total_chunks": total_count,
+                "chunks_with_embeddings": with_embeddings,
+                "unique_subjects": list(subjects),
+                "grade_levels": sorted(list(grades)),
+                "collection_name": self.collection_name,
+                "embedding_model": "text-embedding-005" if self.embedding_model else "none"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get collection stats: {str(e)}")
+            return {
+                "total_chunks": 0,
+                "chunks_with_embeddings": 0,
+                "unique_subjects": [],
+                "grade_levels": [],
+                "collection_name": self.collection_name,
+                "error": str(e)
+            }
 
-# Create singleton instance
-vertex_rag_service = VertexRAGService()
+# Global instance for easy import
+vertex_rag_service = VertexAIRAGService()

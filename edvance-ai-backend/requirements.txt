@@ -16,6 +16,10 @@ google-cloud-storage
 google-cloud-documentai
 google-cloud-discoveryengine
 
+# Vertex AI RAG and Embeddings
+google-cloud-aiplatform
+vertexai
+
 # For handling multipart/form-data (file uploads)
 python-multipart
 
@@ -30,12 +34,9 @@ python-magic
 pytesseract
 python-docx
 
-# RAG and Vector Database
-chromadb
-langchain
-langchain-google-vertexai
-langchain-community
-langchain-chroma
+# Data processing
+numpy
+pandas
 
 # AI and Embeddings
 openai

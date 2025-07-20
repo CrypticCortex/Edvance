@@ -138,7 +138,7 @@ ASSESSMENT REQUIREMENTS:
 - Question Count: {config.question_count}
 
 EDUCATIONAL CONTENT TO BASE QUESTIONS ON:
-{content[:3000]}  # Limit content to avoid token limits
+{content}
 
 INSTRUCTIONS:
 1. Create exactly {config.question_count} multiple choice questions

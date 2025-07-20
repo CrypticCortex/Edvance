@@ -166,6 +166,7 @@ class SimpleAssessmentService:
         questions = []
         
         # Sample question templates by subject
+        print("Using Simple Question file still")
         templates = {
             "Mathematics": [
                 {

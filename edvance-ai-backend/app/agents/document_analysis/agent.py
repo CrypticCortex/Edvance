@@ -136,7 +136,7 @@ DOCUMENT INFO:
 - Grade Level: {grade_level}
 
 DOCUMENT CONTENT:
-{text_content[:3000]}  # Limit to avoid token limits
+{text_content}  
 
 Please analyze and return ONLY a JSON object with these exact fields:
 {{
