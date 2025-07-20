@@ -13,10 +13,108 @@ from app.core.auth import get_current_user
 from app.services.assessment_analysis_service import assessment_analysis_service
 from app.services.learning_path_service import learning_path_service
 from app.services.enhanced_assessment_service import enhanced_assessment_service
+from app.services.learning_path_monitoring_service import learning_path_monitoring_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ====================================================================
+# LEARNING PATH AGENT MONITORING ENDPOINTS
+# ====================================================================
+
+@router.post("/start-monitoring", response_model=Dict[str, Any])
+async def start_learning_path_monitoring(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Start automated learning path monitoring for the teacher's students.
+    Once activated, the learning path agent will automatically:
+    1. Monitor assessment completions
+    2. Analyze student performance  
+    3. Generate personalized learning paths
+    4. Adapt paths based on progress
+    """
+    teacher_uid = current_user["uid"]
+    
+    try:
+        monitoring_result = await learning_path_monitoring_service.start_monitoring(teacher_uid)
+        
+        return {
+            "teacher_uid": teacher_uid,
+            "monitoring_activated": monitoring_result.get("monitoring_started", False),
+            "agent_status": "active",
+            "automation_features": [
+                "Assessment completion detection",
+                "Automatic performance analysis", 
+                "Personalized learning path generation",
+                "Progress monitoring and adaptation",
+                "Real-time intervention recommendations"
+            ],
+            "monitoring_result": monitoring_result,
+            "message": "🤖 Learning Path Agent is now monitoring your students! Assessments will automatically trigger personalized learning paths."
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start monitoring: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Monitoring startup failed: {str(e)}"
+        )
+
+@router.get("/monitoring-status", response_model=Dict[str, Any])
+async def get_monitoring_status(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Get current learning path monitoring status for the teacher."""
+    teacher_uid = current_user["uid"]
+    
+    try:
+        status = await learning_path_monitoring_service.get_monitoring_status(teacher_uid)
+        
+        return {
+            "teacher_uid": teacher_uid,
+            "monitoring_status": status,
+            "agent_active": status.get("monitoring_active", False),
+            "automation_enabled": True,
+            "last_updated": status.get("timestamp")
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get monitoring status: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Status retrieval failed: {str(e)}"
+        )
+
+@router.post("/process-batch-assessments", response_model=Dict[str, Any])
+async def process_batch_assessments(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Process all pending assessments and generate learning paths in batch.
+    Useful for catching up on assessments completed before monitoring was active.
+    """
+    teacher_uid = current_user["uid"]
+    
+    try:
+        batch_result = await learning_path_monitoring_service.process_batch_assessments(teacher_uid)
+        
+        return {
+            "teacher_uid": teacher_uid,
+            "batch_processing": batch_result,
+            "assessments_processed": batch_result.get("assessments_processed", 0),
+            "learning_paths_generated": batch_result.get("learning_paths_generated", 0),
+            "students_helped": batch_result.get("students_helped", []),
+            "message": f"🚀 Processed {batch_result.get('assessments_processed', 0)} assessments and generated {batch_result.get('learning_paths_generated', 0)} learning paths!"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to process batch assessments: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Batch processing failed: {str(e)}"
+        )
 
 # ====================================================================
 # ASSESSMENT ANALYSIS ENDPOINTS
@@ -70,6 +168,16 @@ async def analyze_student_assessment(
             time_taken_minutes=time_taken
         )
         
+        # 🤖 AUTOMATICALLY TRIGGER LEARNING PATH AGENT
+        # This is where the magic happens - no manual intervention needed!
+        agent_response = await learning_path_monitoring_service.handle_assessment_completion(
+            student_id=student_id,
+            assessment_id=assessment_id,
+            student_answers=student_answers,
+            time_taken_minutes=time_taken,
+            teacher_uid=teacher_uid
+        )
+        
         logger.info(f"Analyzed assessment {assessment_id} for student {student_id}")
         
         return {
@@ -83,7 +191,16 @@ async def analyze_student_assessment(
             "strengths": performance.strengths,
             "weaknesses": performance.weaknesses,
             "recommended_focus_areas": performance.recommended_focus_areas,
-            "analysis_completed": True
+            "analysis_completed": True,
+            
+            # 🚀 AGENT-POWERED AUTOMATION RESULTS
+            "agent_intervention": {
+                "triggered": True,
+                "learning_path_generated": agent_response.get("learning_path_generated", False),
+                "intervention_type": agent_response.get("intervention_type"),
+                "agent_response": agent_response.get("agent_response", {}),
+                "automated_action": "Learning path agent automatically analyzed performance and generated personalized learning path"
+            }
         }
         
     except Exception as e:

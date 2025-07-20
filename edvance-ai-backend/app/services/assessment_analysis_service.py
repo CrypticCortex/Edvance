@@ -319,29 +319,55 @@ Please provide a detailed analysis in JSON format:
         """Get comprehensive progress summary for a student."""
         
         try:
-            # Get recent performances
-            performances_query = (db.collection(self.performances_collection)
-                                .where("student_id", "==", student_id)
-                                .order_by("completed_at", direction="DESCENDING")
-                                .limit(10))
-            
-            performance_docs = performances_query.get()
-            performances = [StudentPerformance(**doc.to_dict()) for doc in performance_docs]
+            # Get recent performances - handling Firestore index requirement
+            try:
+                # Try with ordering (requires composite index)
+                performances_query = (db.collection(self.performances_collection)
+                                    .where("student_id", "==", student_id)
+                                    .order_by("completed_at", direction="DESCENDING")
+                                    .limit(10))
+                
+                performance_docs = performances_query.get()
+                performances = [StudentPerformance(**doc.to_dict()) for doc in performance_docs]
+                
+            except Exception as index_error:
+                logger.warning(f"Composite index not available, falling back to simple query: {index_error}")
+                # Fallback: Get all performances for student and sort in Python
+                performances_query = (db.collection(self.performances_collection)
+                                    .where("student_id", "==", student_id))
+                
+                performance_docs = performances_query.get()
+                all_performances = [StudentPerformance(**doc.to_dict()) for doc in performance_docs]
+                
+                # Sort by completed_at in Python and limit to 10
+                performances = sorted(
+                    all_performances, 
+                    key=lambda p: p.completed_at if p.completed_at else datetime.min, 
+                    reverse=True
+                )[:10]
             
             # Get active knowledge gaps
-            gaps_query = (db.collection(self.knowledge_gaps_collection)
-                         .where("student_id", "==", student_id))
-            
-            gap_docs = gaps_query.get()
-            gaps = [KnowledgeGap(**doc.to_dict()) for doc in gap_docs]
+            try:
+                gaps_query = (db.collection(self.knowledge_gaps_collection)
+                             .where("student_id", "==", student_id))
+                
+                gap_docs = gaps_query.get()
+                gaps = [KnowledgeGap(**doc.to_dict()) for doc in gap_docs]
+            except Exception as e:
+                logger.warning(f"Failed to get knowledge gaps for {student_id}: {e}")
+                gaps = []
             
             # Get active recommendations
-            recs_query = (db.collection(self.recommendations_collection)
-                         .where("student_id", "==", student_id)
-                         .where("is_active", "==", True))
-            
-            rec_docs = recs_query.get()
-            recommendations = [LearningRecommendation(**doc.to_dict()) for doc in rec_docs]
+            try:
+                recs_query = (db.collection(self.recommendations_collection)
+                             .where("student_id", "==", student_id)
+                             .where("is_active", "==", True))
+                
+                rec_docs = recs_query.get()
+                recommendations = [LearningRecommendation(**doc.to_dict()) for doc in rec_docs]
+            except Exception as e:
+                logger.warning(f"Failed to get recommendations for {student_id}: {e}")
+                recommendations = []
             
             # Calculate progress metrics
             if performances:

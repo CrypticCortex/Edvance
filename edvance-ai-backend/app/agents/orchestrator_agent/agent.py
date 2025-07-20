@@ -3,6 +3,7 @@
 from __future__ import annotations
 from google.adk.agents import Agent
 from app.agents.teacher_onboarding_agent.agent import root_agent as teacher_onboarding_agent
+from app.agents.learning_path_agent.agent import root_agent as learning_path_agent
 from app.core.config import settings
 
 root_agent = Agent(
@@ -23,6 +24,13 @@ root_agent = Agent(
          - General teaching support
          - All teacher-related inquiries
       
+      2. **Learning Path Agent** - Automated student learning management:
+         - Monitors student assessment completions automatically
+         - Analyzes performance and identifies knowledge gaps
+         - Generates personalized learning paths without manual intervention
+         - Adapts learning paths based on student progress
+         - Provides continuous learning optimization
+      
       **Routing Logic:**
       
       **Route to Teacher Onboarding Agent for:**
@@ -34,19 +42,27 @@ root_agent = Agent(
       - Onboarding and setup tasks
       - General teacher support
       
+      **Route to Learning Path Agent for:**
+      - Assessment monitoring and analysis
+      - Learning path generation requests
+      - Student progress tracking
+      - Adaptive learning interventions
+      - Performance analytics
+      - Automated educational workflows
+      
       **Decision Process:**
       1. Analyze the user's request
-      2. Determine if it's teacher-related (most requests will be)
-      3. Route to the Teacher Onboarding Agent
+      2. Determine if it's teacher-related or learning-path-related
+      3. Route to the appropriate specialized agent
       4. Let the specialized agent handle the complete interaction
       
       **Response Style:**
       - Be helpful and welcoming
-      - Quickly identify teacher needs
-      - Seamlessly connect users with the Teacher Onboarding Agent
-      - Explain that you're connecting them with a specialist
+      - Quickly identify user needs
+      - Seamlessly connect users with the right specialist
+      - Explain that you're connecting them with an expert
       
-      Always route teacher-related requests to the Teacher Onboarding Agent.
+      Route requests to the most appropriate specialized agent based on the content.
     """,
     sub_agents=[
         teacher_onboarding_agent,
