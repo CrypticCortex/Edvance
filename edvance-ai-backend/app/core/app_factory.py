@@ -11,6 +11,7 @@ from app.api.v1 import documents as documents_router
 from app.api.v1 import students as students_router
 from app.api.v1 import simple_assessments as assessments_router
 from app.api.v1 import rag_assessments as rag_router
+from app.api.v1 import personalized_learning as learning_router
 
 def create_app() -> FastAPI:
     """
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(students_router.router, prefix="/v1/students", tags=["Students"])
     app.include_router(assessments_router.router, prefix="/v1/assessments", tags=["Assessments"])
     app.include_router(rag_router.router, prefix="/v1/assessments", tags=["RAG Assessments"])
+    app.include_router(learning_router.router, prefix="/v1/learning", tags=["Personalized Learning"])
     
     # Add a root health check
     @app.get("/", tags=["Health"])
