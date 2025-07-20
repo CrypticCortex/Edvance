@@ -16,3 +16,6 @@ google-cloud-storage
 
 # For handling multipart/form-data (file uploads)
 python-multipart
+
+# Google Agent Development Kit
+google-adk

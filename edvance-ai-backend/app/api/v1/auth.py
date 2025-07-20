@@ -1,7 +1,8 @@
 # FILE: app/api/v1/auth.py
 
 from fastapi import APIRouter, HTTPException, status, Depends
-from app.models import UserCreate, UserInDB
+# Make sure to import UserProfileUpdate
+from app.models import UserCreate, UserInDB, UserProfileUpdate
 from app.core.firebase import firebase_auth, db
 from firebase_admin.auth import EmailAlreadyExistsError, UserNotFoundError
 from app.core.auth import get_current_user
@@ -19,13 +20,18 @@ def create_user(user_in: UserCreate):
             email=user_in.email,
             password=user_in.password
         )
+        
         new_user_data = {
             "uid": user_record.uid,
             "email": user_record.email,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.utcnow(),
+            "subjects": []  # <-- ADD THIS LINE to initialize with an empty list
         }
+        
         db.collection("users").document(user_record.uid).set(new_user_data)
+        
         return new_user_data
+
     except EmailAlreadyExistsError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -41,7 +47,6 @@ def create_user(user_in: UserCreate):
 def get_user_profile(current_user: dict = Depends(get_current_user)):
     """
     Retrieve the profile of the currently authenticated user from Firestore.
-    This is a protected endpoint.
     """
     user_uid = current_user["uid"]
     try:
@@ -56,11 +61,36 @@ def get_user_profile(current_user: dict = Depends(get_current_user)):
             detail=f"An error occurred while fetching user profile: {str(e)}"
         )
 
+@router.put("/me/profile", response_model=UserInDB) # <-- ADD THIS NEW ENDPOINT
+def update_user_profile(profile_data: UserProfileUpdate, current_user: dict = Depends(get_current_user)):
+    """
+    Update the profile of the currently authenticated user (e.g., their subjects).
+    """
+    user_uid = current_user["uid"]
+    try:
+        user_ref = db.collection("users").document(user_uid)
+        
+        # Using .update() will create the fields if they don't exist or overwrite them if they do.
+        user_ref.update(profile_data.model_dump())
+        
+        # Retrieve the updated document to return it
+        updated_doc = user_ref.get()
+        if not updated_doc.exists:
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found after update.")
+        
+        return updated_doc.to_dict()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while updating user profile: {str(e)}"
+        )
+
+
 @router.post("/logout", status_code=status.HTTP_200_OK)
 def logout_user(current_user: dict = Depends(get_current_user)):
     """
     Logs out the user by revoking their refresh tokens.
-    This is a protected endpoint.
     """
     user_uid = current_user["uid"]
     try:

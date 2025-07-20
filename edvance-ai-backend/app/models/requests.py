@@ -1,4 +1,4 @@
-# FILE: app/models.py
+# FILE: app/models/requests.py
 
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
@@ -32,6 +32,23 @@ class UserProfileUpdate(BaseModel): # <-- ADD THIS NEW MODEL
     """
     subjects: List[str] = Field(..., description="A list of subjects the teacher handles.")
 
+# ====================================================================
+# Agent Interaction Models
+# ====================================================================
+
+class AgentPrompt(BaseModel):
+    """Request model for agent invocation."""
+    prompt: str = Field(..., description="The user's prompt to send to the agent", min_length=1)
+    
+class AgentResponse(BaseModel):
+    """Response model for agent invocation."""
+    response: str = Field(..., description="The agent's response text")
+    session_id: Optional[str] = Field(None, description="The session ID for conversation continuity")
+    
+class HealthResponse(BaseModel):
+    """Response model for health check."""
+    status: str = Field(..., description="The health status")
+    message: str = Field(..., description="Additional health information")
 
 # ====================================================================
 # Content Generation Models
@@ -48,8 +65,7 @@ class GeneratedContentResponse(BaseModel):
     id: str
     title: str
     content: str
-    language: str
-    grade_level: int
     topic: str
-    created_at: datetime
-    teacher_id: str
+    grade_level: int
+    language: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)

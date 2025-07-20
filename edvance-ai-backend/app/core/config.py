@@ -19,7 +19,13 @@ class Settings(BaseSettings):
     firebase_storage_bucket: str
 
     # Gemini Model Settings
-    gemini_model_name: str = "gemini-1.5-flash-latest"
+    gemini_model_name: str = "gemini-2.5-pro"
+    
+    # Google GenAI Configuration
+    google_genai_use_vertexai: bool = False
+    google_api_key: str = ""
+    google_cloud_project: str = ""
+    google_cloud_location: str = "us-west1"
 
     class Config:
         # This tells Pydantic to load variables from a .env file

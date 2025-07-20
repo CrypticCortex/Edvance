@@ -1,41 +1,16 @@
 # FILE: app/main.py
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.core.firebase import initialize_firebase
+"""
+Edvance AI Backend - Main Application Entry Point
 
-# Initialize Firebase Admin SDK on startup
-initialize_firebase()
+A clean and modular FastAPI application for AI-powered educational content management.
+"""
 
-# Create the FastAPI app instance
-app = FastAPI(
-    title="Edvance AI Teaching Assistant API",
-    description="Backend services for the Edvance AI application.",
-    version="1.0.0"
-)
+from app.core.app_factory import create_app
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+# Create the FastAPI application
+app = create_app()
 
-    allow_headers=["*"],
-)
-
-
-@app.get("/", tags=["Health Check"])
-def read_root():
-    """
-    A simple health check endpoint to confirm the API is running.
-    """
-    return {"status": "ok", "message": "Welcome to the Edvance AI API!"}
-
-
-# === ADD THIS PART ===
-# Include API routers
-from app.api.v1 import auth as auth_router
-
-# Add the authentication router to the main application
-app.include_router(auth_router.router, prefix="/v1/auth", tags=["Authentication"])
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
