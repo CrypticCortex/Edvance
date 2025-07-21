@@ -67,7 +67,10 @@ class LearningPathService:
             # Save to Firestore
             await self._save_learning_path(learning_path)
             
-            logger.info(f"Generated learning path {path_id} with {len(learning_steps)} steps")
+            # Generate lessons for each learning step
+            await self._generate_lessons_for_steps(learning_path)
+            
+            logger.info(f"Generated learning path {path_id} with {len(learning_steps)} steps and lessons")
             return learning_path
             
         except Exception as e:
@@ -501,6 +504,50 @@ Generate the learning path now:"""
         """Save learning path to Firestore."""
         doc_ref = db.collection(self.learning_paths_collection).document(path.path_id)
         doc_ref.set(path.dict())
+    
+    async def _generate_lessons_for_steps(self, learning_path: LearningPath) -> None:
+        """Generate interactive lessons for each learning step in the path."""
+        try:
+            # Import here to avoid circular imports
+            from app.services.lesson_service import lesson_service
+            
+            logger.info(f"Generating lessons for {len(learning_path.steps)} learning steps")
+            
+            for step in learning_path.steps:
+                try:
+                    # Generate lesson for this step
+                    lesson_result = await lesson_service.create_lesson_from_step(
+                        learning_step_id=step.step_id,
+                        student_id=learning_path.student_id,
+                        teacher_uid=learning_path.teacher_uid,
+                        customizations={
+                            "learning_path_context": {
+                                "path_id": learning_path.path_id,
+                                "step_number": step.step_number,
+                                "total_steps": len(learning_path.steps),
+                                "subject": learning_path.subject,
+                                "target_grade": learning_path.target_grade
+                            }
+                        }
+                    )
+                    
+                    if lesson_result.get("success"):
+                        # Update step with lesson ID
+                        step.content_url = f"/lessons/{lesson_result['lesson_id']}"
+                        logger.info(f"Generated lesson {lesson_result['lesson_id']} for step {step.step_id}")
+                    else:
+                        logger.warning(f"Failed to generate lesson for step {step.step_id}: {lesson_result.get('error')}")
+                        
+                except Exception as e:
+                    logger.error(f"Error generating lesson for step {step.step_id}: {str(e)}")
+                    continue
+            
+            # Update the learning path with lesson URLs
+            await self._save_learning_path(learning_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to generate lessons for learning path: {str(e)}")
+            # Don't fail the entire path creation if lesson generation fails
 
 # Global instance
 learning_path_service = LearningPathService()

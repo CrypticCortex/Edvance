@@ -1,0 +1,13 @@
+{
+  "test_start": "2025-07-21T12:38:14.276787",
+  "teacher_uid": "teacher_lesson_test_123",
+  "student_id": "lesson_student_001",
+  "lesson_generation": true,
+  "chatbot_functionality": true,
+  "slide_generation": true,
+  "interactive_elements": true,
+  "progress_tracking": true,
+  "test_completion": "2025-07-21T12:42:59.524454",
+  "overall_success": true,
+  "success_rate": 100.0
+}

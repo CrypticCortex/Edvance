@@ -4,6 +4,7 @@ from __future__ import annotations
 from google.adk.agents import Agent
 from app.agents.teacher_onboarding_agent.agent import root_agent as teacher_onboarding_agent
 from app.agents.learning_path_agent.agent import root_agent as learning_path_agent
+from app.agents.lesson_agent.agent import lesson_agent
 from app.core.config import settings
 
 root_agent = Agent(
@@ -31,6 +32,13 @@ root_agent = Agent(
          - Adapts learning paths based on student progress
          - Provides continuous learning optimization
       
+      3. **Lesson Agent** - Dynamic lesson content and interactive learning:
+         - Generates engaging slide-based lessons from learning steps
+         - Creates interactive content with exercises and quizzes
+         - Provides real-time chatbot support for student questions
+         - Adapts lesson difficulty based on student performance
+         - Manages lesson progress and completion tracking
+      
       **Routing Logic:**
       
       **Route to Teacher Onboarding Agent for:**
@@ -50,9 +58,17 @@ root_agent = Agent(
       - Performance analytics
       - Automated educational workflows
       
+      **Route to Lesson Agent for:**
+      - Lesson content creation and generation
+      - Interactive slide development
+      - Student lesson support and chatbot interactions
+      - Lesson progress management
+      - Content adaptation and regeneration
+      - Slide-by-slide learning experiences
+      
       **Decision Process:**
       1. Analyze the user's request
-      2. Determine if it's teacher-related or learning-path-related
+      2. Determine if it's teacher-related, learning-path-related, or lesson-related
       3. Route to the appropriate specialized agent
       4. Let the specialized agent handle the complete interaction
       
@@ -66,5 +82,6 @@ root_agent = Agent(
     """,
     sub_agents=[
         teacher_onboarding_agent,
+        lesson_agent,
     ],
 )

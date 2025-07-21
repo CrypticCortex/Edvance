@@ -5,6 +5,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 
 from app.core.firebase import initialize_firebase
 from app.core.middleware import configure_middleware
+from app.core.streamlined_docs import configure_streamlined_docs
 from app.api.v1 import auth as auth_router
 from app.api.v1 import agent as agent_router
 from app.api.v1 import documents as documents_router
@@ -12,6 +13,7 @@ from app.api.v1 import students as students_router
 from app.api.v1 import simple_assessments as assessments_router
 from app.api.v1 import rag_assessments as rag_router
 from app.api.v1 import personalized_learning as learning_router
+from app.api.v1 import lessons as lessons_router
 
 def create_app() -> FastAPI:
     """
@@ -37,21 +39,36 @@ def create_app() -> FastAPI:
     app.include_router(assessments_router.router, prefix="/v1/assessments", tags=["Assessments"])
     app.include_router(rag_router.router, prefix="/v1/assessments", tags=["RAG Assessments"])
     app.include_router(learning_router.router, prefix="/v1/learning", tags=["Personalized Learning"])
+    app.include_router(lessons_router.router, prefix="/v1/lessons", tags=["Lessons"])
     
     # Add a root health check
     @app.get("/", tags=["Health"])
     async def root():
         return {
-            "message": "Edvance AI Backend",
+            "message": "Edvance AI - Core Teacher Workflow API",
             "status": "running",
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "description": "Streamlined API for essential teacher journey - only core endpoints shown",
+            "total_core_endpoints": 22,
+            "documentation": "See COMPLETE_TEACHER_JOURNEY.md for full workflow guide"
         }
     
     @app.get("/health", tags=["Health"])
     async def health_check():
         return {
             "status": "healthy",
-            "message": "Service is operational"
+            "message": "Core teacher workflow API operational",
+            "core_features": [
+                "Authentication & Profile Management",
+                "Student Data Management", 
+                "AI Learning Path Generation",
+                "Ultra-Fast Lesson Creation",
+                "Intelligent Chatbot Support",
+                "Real-Time Analytics"
+            ]
         }
+    
+    # Configure streamlined documentation (only core teacher workflow endpoints)
+    configure_streamlined_docs(app)
     
     return app
