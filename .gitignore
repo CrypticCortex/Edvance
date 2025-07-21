@@ -1,10 +1,10 @@
 # FILE: .gitignore
 
 # Environment
-.env
+*.env
 
 # Service Account Key - IMPORTANT!
-svc-acc-key.json
+edvance-ai-backend/svc-acc-key.json
 # Python
 __pycache__/
 *.pyc
