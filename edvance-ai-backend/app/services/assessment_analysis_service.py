@@ -40,7 +40,7 @@ class AssessmentAnalysisService:
             # Calculate basic metrics
             total_questions = len(assessment.questions)
             correct_answers = sum(1 for i, answer in enumerate(student_answers) 
-                                if i < len(assessment.questions) and answer == assessment.questions[i].correct_answer)
+                                  if i < len(assessment.questions) and answer == assessment.questions[i].correct_answer)
             score_percentage = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
             
             # Analyze performance by question
@@ -59,7 +59,7 @@ class AssessmentAnalysisService:
                     "is_correct": is_correct,
                     "topic": question.topic,
                     "difficulty": question.difficulty,
-                    "time_spent_seconds": (time_taken_minutes * 60) // total_questions  # Rough estimate
+                    "time_spent_seconds": (time_taken_minutes * 60) // total_questions # Rough estimate
                 }
                 question_performances.append(question_performance)
                 
@@ -93,10 +93,10 @@ class AssessmentAnalysisService:
                 question_performances=question_performances,
                 topic_scores=topic_score_averages,
                 difficulty_scores=difficulty_score_averages,
-                learning_objective_scores={},  # Will be enhanced with AI analysis
+                learning_objective_scores={}, # Will be enhanced with AI analysis
                 strengths=strengths,
                 weaknesses=weaknesses,
-                recommended_focus_areas=weaknesses  # Initial recommendation
+                recommended_focus_areas=weaknesses # Initial recommendation
             )
             
             # Save performance to Firestore
@@ -174,7 +174,7 @@ Please provide a detailed analysis in JSON format:
 }}"""
 
             # Get AI analysis
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             ai_analysis = self._parse_ai_analysis(response.text)
             
             # Update performance with AI insights
@@ -227,14 +227,14 @@ Please provide a detailed analysis in JSON format:
             
             # Create gap records for topics with multiple incorrect answers
             for topic, topic_questions in topic_gaps.items():
-                if len(topic_questions) >= 2:  # Multiple mistakes in same topic
+                if len(topic_questions) >= 2: # Multiple mistakes in same topic
                     gap = KnowledgeGap(
                         gap_id=str(uuid.uuid4()),
                         student_id=performance.student_id,
                         subject=assessment.subject,
                         topic=topic,
                         difficulty_level=DifficultyLevel(assessment.difficulty),
-                        learning_objective=LearningObjectiveType.UNDERSTAND,  # Default, will be refined
+                        learning_objective=LearningObjectiveType.UNDERSTAND, # Default, will be refined
                         confidence_score=min(0.9, len(topic_questions) / len(assessment.questions)),
                         severity_score=1.0 - (performance.topic_scores.get(topic, 0) / 100),
                         frequency=len(topic_questions),
@@ -267,7 +267,7 @@ Please provide a detailed analysis in JSON format:
             
             # Create recommendations for each knowledge gap
             for gap in knowledge_gaps:
-                if gap.severity_score > 0.3:  # Only for significant gaps
+                if gap.severity_score > 0.3: # Only for significant gaps
                     recommendation = LearningRecommendation(
                         recommendation_id=str(uuid.uuid4()),
                         student_id=student_id,
@@ -323,9 +323,9 @@ Please provide a detailed analysis in JSON format:
             try:
                 # Try with ordering (requires composite index)
                 performances_query = (db.collection(self.performances_collection)
-                                    .where("student_id", "==", student_id)
-                                    .order_by("completed_at", direction="DESCENDING")
-                                    .limit(10))
+                                      .where("student_id", "==", student_id)
+                                      .order_by("completed_at", direction="DESCENDING")
+                                      .limit(10))
                 
                 performance_docs = performances_query.get()
                 performances = [StudentPerformance(**doc.to_dict()) for doc in performance_docs]
@@ -334,7 +334,7 @@ Please provide a detailed analysis in JSON format:
                 logger.warning(f"Composite index not available, falling back to simple query: {index_error}")
                 # Fallback: Get all performances for student and sort in Python
                 performances_query = (db.collection(self.performances_collection)
-                                    .where("student_id", "==", student_id))
+                                      .where("student_id", "==", student_id))
                 
                 performance_docs = performances_query.get()
                 all_performances = [StudentPerformance(**doc.to_dict()) for doc in performance_docs]
@@ -349,7 +349,7 @@ Please provide a detailed analysis in JSON format:
             # Get active knowledge gaps
             try:
                 gaps_query = (db.collection(self.knowledge_gaps_collection)
-                             .where("student_id", "==", student_id))
+                                .where("student_id", "==", student_id))
                 
                 gap_docs = gaps_query.get()
                 gaps = [KnowledgeGap(**doc.to_dict()) for doc in gap_docs]
@@ -360,8 +360,8 @@ Please provide a detailed analysis in JSON format:
             # Get active recommendations
             try:
                 recs_query = (db.collection(self.recommendations_collection)
-                             .where("student_id", "==", student_id)
-                             .where("is_active", "==", True))
+                                .where("student_id", "==", student_id)
+                                .where("is_active", "==", True))
                 
                 rec_docs = recs_query.get()
                 recommendations = [LearningRecommendation(**doc.to_dict()) for doc in rec_docs]
@@ -405,15 +405,15 @@ Please provide a detailed analysis in JSON format:
             if isinstance(perf, dict) and "question_id" in perf:
                 status = "✓ Correct" if perf.get("is_correct") else "✗ Incorrect"
                 formatted.append(f"Q{i+1}: {status} - Topic: {perf.get('topic', 'Unknown')} - Difficulty: {perf.get('difficulty', 'Unknown')}")
-        return "\\n".join(formatted)
+        return "\n".join(formatted)
     
     def _format_topic_scores(self, topic_scores: Dict[str, float]) -> str:
         """Format topic scores for display."""
-        return "\\n".join([f"{topic}: {score:.1f}%" for topic, score in topic_scores.items()])
+        return "\n".join([f"{topic}: {score:.1f}%" for topic, score in topic_scores.items()])
     
     def _format_difficulty_scores(self, difficulty_scores: Dict[str, float]) -> str:
         """Format difficulty scores for display."""
-        return "\\n".join([f"{difficulty}: {score:.1f}%" for difficulty, score in difficulty_scores.items()])
+        return "\n".join([f"{difficulty}: {score:.1f}%" for difficulty, score in difficulty_scores.items()])
     
     def _parse_ai_analysis(self, response_text: str) -> Dict[str, Any]:
         """Parse AI analysis response."""

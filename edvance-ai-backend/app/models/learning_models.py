@@ -60,7 +60,7 @@ class LearningStep(BaseModel):
     learning_objective: LearningObjectiveType = Field(..., description="Learning goal")
     
     # Resources
-    content_type: str = Field(..., description="Type of content (video, reading, practice, etc.)")
+    content_type: str = Field(..., description="Type of content (video, reading, practice, viva, etc.)")
     content_url: Optional[str] = Field(None, description="Link to content")
     content_text: Optional[str] = Field(None, description="Text content or instructions")
     estimated_duration_minutes: int = Field(default=15, description="Expected time to complete")

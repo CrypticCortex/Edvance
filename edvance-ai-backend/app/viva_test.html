@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Viva Bot Test</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container { 
+            width: 90%; 
+            max-width: 900px; 
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            padding: 30px;
+            margin: 20px 0;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        input, select { 
+            width: 100%; 
+            padding: 12px; 
+            margin-bottom: 15px; 
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        button {
+            padding: 12px 24px;
+            margin: 8px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        #start-btn {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+        
+        #start-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+        
+        #mute-btn {
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            color: white;
+        }
+        
+        #mute-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
+        }
+        
+        #end-btn {
+            background: linear-gradient(45deg, #f44336, #d32f2f);
+            color: white;
+        }
+        
+        #end-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4);
+        }
+        
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        #status-display {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
+        }
+        
+        #status-display p {
+            margin: 8px 0;
+            font-weight: 500;
+        }
+        
+        #agent-output, #student-output { 
+            border: 2px solid #e1e5e9; 
+            padding: 15px; 
+            margin: 15px 0; 
+            min-height: 60px; 
+            border-radius: 10px;
+            background: #f8f9fa;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        
+        #agent-output {
+            border-left: 5px solid #4CAF50;
+        }
+        
+        #student-output {
+            border-left: 5px solid #2196F3;
+        }
+        
+        #evaluation-results {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin: 25px 0;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        #evaluation-results h3 {
+            margin-top: 0;
+            font-size: 1.8em;
+            text-align: center;
+        }
+        
+        #evaluation-results ul {
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        #evaluation-results li {
+            margin: 8px 0;
+            padding: 5px 0;
+        }
+        
+        .step-header {
+            color: #667eea;
+            font-weight: 600;
+            margin-top: 25px;
+            margin-bottom: 10px;
+        }
+        
+        .button-group {
+            text-align: center;
+            margin: 25px 0;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-connecting { background: #fff3cd; color: #856404; }
+        .status-connected { background: #d4edda; color: #155724; }
+        .status-ready { background: #d1ecf1; color: #0c5460; }
+        .status-speaking { background: #f8d7da; color: #721c24; }
+        .status-listening { background: #d1ecf1; color: #0c5460; }
+        .status-completed { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Viva Agent Test</h1>
+        <div class="step-header">Step 1: Authentication</div>
+        <p>Get a token from <code>get_id_token.html</code> and paste it below.</p>
+        <input type="text" id="token-input" placeholder="Paste Firebase ID Token here">
+        
+        <div class="step-header">Step 2: Language Selection</div>
+        <p>Select your preferred language for the viva examination.</p>
+        <select id="language-select">
+            <option value="english">English</option>
+            <option value="tamil">Tamil (தமிழ்)</option>
+            <option value="telugu">Telugu (తెలుగు)</option>
+        </select>
+        
+        <div class="step-header">Step 3: Topic Selection</div>
+        <p>Choose your subject/topic for the viva.</p>
+        <select id="topic-select">
+            <option value="algebra">Introduction to Algebra</option>
+            <option value="geometry">Basic Geometry</option>
+            <option value="calculus">Calculus Fundamentals</option>
+            <option value="physics">Physics Concepts</option>
+            <option value="chemistry">Chemistry Basics</option>
+            <option value="biology">Biology Fundamentals</option>
+        </select>
+        
+        <div class="button-group">
+            <button id="start-btn">🚀 Start Viva</button>
+            <button id="mute-btn" disabled>🎤 Start Speaking</button>
+            <button id="end-btn" disabled>🏁 End Viva</button>
+        </div>
+        
+        <div id="status-display">
+            <p><strong>Status:</strong> <span id="session-status">Not started</span></p>
+            <p><strong>Language:</strong> <span id="current-language">-</span></p>
+            <p><strong>Topic:</strong> <span id="current-topic">-</span></p>
+        </div>
+        
+        <p>Agent: <span id="agent-output">...</span></p>
+        <p>You: <span id="student-output">...</span></p>
+        
+        <div id="evaluation-results" style="display: none;">
+            <h3>Viva Evaluation Results</h3>
+            <p><strong>Score:</strong> <span id="final-score">-</span>/100</p>
+            <p><strong>Feedback:</strong> <span id="final-feedback">-</span></p>
+            <div id="strengths-section">
+                <strong>Strengths:</strong>
+                <ul id="strengths-list"></ul>
+            </div>
+            <div id="improvements-section">
+                <strong>Areas for Improvement:</strong>
+                <ul id="improvements-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const muteBtn = document.getElementById('mute-btn');
+        const endBtn = document.getElementById('end-btn');
+        const agentOutput = document.getElementById('agent-output');
+        const studentOutput = document.getElementById('student-output');
+        const tokenInput = document.getElementById('token-input');
+        const languageSelect = document.getElementById('language-select');
+        const topicSelect = document.getElementById('topic-select');
+        const sessionStatus = document.getElementById('session-status');
+        const currentLanguage = document.getElementById('current-language');
+        const currentTopic = document.getElementById('current-topic');
+        const evaluationResults = document.getElementById('evaluation-results');
+
+        let websocket;
+        let mediaRecorder;
+        let audioContext;
+        let isMuted = true;
+        let isRecording = false;
+        let currentSessionId = null;
+
+        // Audio configuration matching the backend
+        const INPUT_SAMPLE_RATE = 16000; // Input sample rate for Gemini Live API
+        const OUTPUT_SAMPLE_RATE = 24000; // Output sample rate from Gemini Live API
+
+        async function setupAudioContext() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: OUTPUT_SAMPLE_RATE
+                });
+                return true;
+            } catch (error) {
+                console.error('Failed to create audio context:', error);
+                agentOutput.textContent = "Error: Could not initialize audio. Please check browser permissions.";
+                return false;
+            }
+        }
+
+        // Advanced continuous audio streaming system
+        let audioRingBuffer = new Float32Array(48000 * 5); // 5 seconds ring buffer at 24kHz
+        let writePosition = 0;
+        let readPosition = 0;
+        let isPlaying = false;
+        let audioSource = null;
+        let scriptProcessor = null;
+        const BUFFER_SIZE = 24000; // 1 second buffer before starting
+        const SAMPLE_RATE = 24000;
+
+        function getBufferSize() {
+            let size = writePosition - readPosition;
+            if (size < 0) size += audioRingBuffer.length;
+            return size;
+        }
+
+        async function playAudioData(base64Audio) {
+            try {
+                if (!audioContext) {
+                    await setupAudioContext();
+                }
+
+                // Decode base64 to PCM samples
+                const binaryString = atob(base64Audio);
+                const audioBytes = new Uint8Array(binaryString.length);
+                
+                for (let i = 0; i < binaryString.length; i++) {
+                    audioBytes[i] = binaryString.charCodeAt(i);
+                }
+
+                // Convert to 16-bit signed integers and write to ring buffer
+                const samples = new Int16Array(audioBytes.buffer);
+                
+                for (let i = 0; i < samples.length; i++) {
+                    audioRingBuffer[writePosition] = samples[i] / 32768.0;
+                    writePosition = (writePosition + 1) % audioRingBuffer.length;
+                }
+
+                // Start continuous playback if we have enough buffered audio
+                if (!isPlaying && getBufferSize() >= BUFFER_SIZE) {
+                    startContinuousPlayback();
+                }
+                
+                console.log(`Buffered ${samples.length} samples, total buffer: ${getBufferSize()} samples`);
+                
+            } catch (error) {
+                console.error('Error buffering audio:', error);
+                agentOutput.textContent = `Audio error: ${error.message}`;
+            }
+        }
+
+        function startContinuousPlayback() {
+            if (isPlaying) return;
+            
+            isPlaying = true;
+            console.log('Starting continuous audio playback');
+
+            try {
+                // Create a script processor for continuous audio output
+                scriptProcessor = audioContext.createScriptProcessor(4096, 0, 1);
+                
+                scriptProcessor.onaudioprocess = function(event) {
+                    const outputBuffer = event.outputBuffer;
+                    const outputData = outputBuffer.getChannelData(0);
+                    const bufferSize = getBufferSize();
+                    
+                    // Fill the output buffer from our ring buffer
+                    for (let i = 0; i < outputData.length; i++) {
+                        if (bufferSize > i) {
+                            outputData[i] = audioRingBuffer[readPosition];
+                            readPosition = (readPosition + 1) % audioRingBuffer.length;
+                        } else {
+                            // Not enough data, output silence
+                            outputData[i] = 0;
+                        }
+                    }
+                    
+                    // Stop if we've run out of data
+                    if (getBufferSize() === 0) {
+                        stopContinuousPlayback();
+                    }
+                };
+
+                scriptProcessor.connect(audioContext.destination);
+                
+            } catch (error) {
+                console.error('Error starting continuous playback:', error);
+                isPlaying = false;
+            }
+        }
+
+        function stopContinuousPlayback() {
+            if (!isPlaying) return;
+            
+            isPlaying = false;
+            console.log('Stopping continuous audio playback');
+            
+            if (scriptProcessor) {
+                scriptProcessor.disconnect();
+                scriptProcessor = null;
+            }
+        }
+
+        function generateSessionId() {
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substring(2, 8);
+            return `viva-session-${timestamp}-${random}`;
+        }
+
+        function getLanguageName(langCode) {
+            const languages = {
+                'english': 'English',
+                'tamil': 'Tamil (தமிழ்)',
+                'telugu': 'Telugu (తెలుగు)'
+            };
+            return languages[langCode] || 'English';
+        }
+
+        function getTopicName(topicCode) {
+            const topics = {
+                'algebra': 'Introduction to Algebra',
+                'geometry': 'Basic Geometry', 
+                'calculus': 'Calculus Fundamentals',
+                'physics': 'Physics Concepts',
+                'chemistry': 'Chemistry Basics',
+                'biology': 'Biology Fundamentals'
+            };
+            return topics[topicCode] || 'Introduction to Algebra';
+        }
+
+        function setupWebSocket() {
+            const token = tokenInput.value;
+            const selectedLanguage = languageSelect.value;
+            const selectedTopic = topicSelect.value;
+            
+            if (!token) {
+                agentOutput.textContent = "Error: Please provide a Firebase ID token.";
+                return;
+            }
+            
+            // Generate new session ID
+            currentSessionId = generateSessionId();
+            
+            // Update UI
+            currentLanguage.textContent = getLanguageName(selectedLanguage);
+            currentTopic.textContent = getTopicName(selectedTopic);
+            sessionStatus.textContent = "Connecting...";
+            
+            const wsUrl = `ws://localhost:8000/viva/${currentSessionId}/speak?token=${encodeURIComponent(token)}&language=${selectedLanguage}&topic=${selectedTopic}`;
+            websocket = new WebSocket(wsUrl);
+
+            websocket.onopen = () => {
+                agentOutput.textContent = "Connection successful! Starting viva with native audio...";
+                sessionStatus.textContent = "Connected";
+                muteBtn.disabled = false;
+                endBtn.disabled = false;
+                startBtn.disabled = true;
+                languageSelect.disabled = true;
+                topicSelect.disabled = true;
+            };
+
+            websocket.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'audio_response') {
+                    // Handle native audio response from Gemini Live API
+                    await playAudioData(data.audio);
+                    agentOutput.textContent = "🔊 AI is speaking (native audio)...";
+                } else if (data.type === 'session_ready') {
+                    agentOutput.textContent = data.message;
+                    sessionStatus.textContent = "Ready";
+                } else if (data.agent_response) {
+                    // Handle text response (fallback or welcome message)
+                    agentOutput.textContent = data.agent_response;
+                } else if (data.error) {
+                    agentOutput.textContent = `Error: ${data.error}`;
+                    sessionStatus.textContent = "Error";
+                }
+            };
+
+            websocket.onerror = () => {
+                agentOutput.textContent = "Error: Could not connect to the WebSocket. Check backend logs and token.";
+                sessionStatus.textContent = "Connection Error";
+            };
+
+            websocket.onclose = () => {
+                agentOutput.textContent = "Connection closed.";
+                sessionStatus.textContent = "Disconnected";
+                muteBtn.disabled = true;
+                endBtn.disabled = true;
+                startBtn.disabled = false;
+                languageSelect.disabled = false;
+                topicSelect.disabled = false;
+            };
+        }
+
+        async function endViva() {
+            if (!currentSessionId) return;
+            
+            const token = tokenInput.value;
+            if (!token) return;
+            
+            try {
+                sessionStatus.textContent = "Ending session...";
+                
+                // Close WebSocket connection
+                if (websocket) {
+                    websocket.close();
+                }
+                
+                // Call end session API
+                const response = await fetch(`http://localhost:8000/viva/${currentSessionId}/end?token=${encodeURIComponent(token)}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                // Display evaluation results
+                if (result.score !== undefined) {
+                    document.getElementById('final-score').textContent = result.score;
+                    document.getElementById('final-feedback').textContent = result.feedback || 'No feedback provided';
+                    
+                    // Display strengths
+                    const strengthsList = document.getElementById('strengths-list');
+                    strengthsList.innerHTML = '';
+                    if (result.strengths && result.strengths.length > 0) {
+                        result.strengths.forEach(strength => {
+                            const li = document.createElement('li');
+                            li.textContent = strength;
+                            strengthsList.appendChild(li);
+                        });
+                    } else {
+                        const li = document.createElement('li');
+                        li.textContent = 'No specific strengths identified';
+                        strengthsList.appendChild(li);
+                    }
+                    
+                    // Display areas for improvement
+                    const improvementsList = document.getElementById('improvements-list');
+                    improvementsList.innerHTML = '';
+                    if (result.areas_for_improvement && result.areas_for_improvement.length > 0) {
+                        result.areas_for_improvement.forEach(improvement => {
+                            const li = document.createElement('li');
+                            li.textContent = improvement;
+                            improvementsList.appendChild(li);
+                        });
+                    } else {
+                        const li = document.createElement('li');
+                        li.textContent = 'No specific areas for improvement identified';
+                        improvementsList.appendChild(li);
+                    }
+                    
+                    evaluationResults.style.display = 'block';
+                    sessionStatus.textContent = "Completed";
+                    agentOutput.textContent = `Viva completed! Your score: ${result.score}/100`;
+                } else {
+                    agentOutput.textContent = result.summary || "Viva ended successfully";
+                    sessionStatus.textContent = "Ended";
+                }
+                
+            } catch (error) {
+                console.error('Error ending viva:', error);
+                agentOutput.textContent = "Error ending viva session";
+                sessionStatus.textContent = "Error";
+            }
+        }
+
+        async function setupAudioRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        sampleRate: INPUT_SAMPLE_RATE,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    } 
+                });
+
+                // Create audio context for processing (use output sample rate for context)
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: OUTPUT_SAMPLE_RATE
+                    });
+                }
+
+                // Create audio processing pipeline
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (event) => {
+                    if (!isMuted && websocket && websocket.readyState === WebSocket.OPEN) {
+                        const inputBuffer = event.inputBuffer;
+                        const inputData = inputBuffer.getChannelData(0);
+                        
+                        // Convert float32 to int16 PCM
+                        const pcmData = new Int16Array(inputData.length);
+                        for (let i = 0; i < inputData.length; i++) {
+                            pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+                        }
+                        
+                        // Convert to base64 and send
+                        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+                        websocket.send(JSON.stringify({
+                            type: 'audio_chunk',
+                            audio: base64Audio
+                        }));
+                    }
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                // Store for cleanup
+                window.audioProcessor = processor;
+                window.audioSource = source;
+
+                return true;
+            } catch (error) {
+                console.error('Failed to setup audio recording:', error);
+                agentOutput.textContent = "Error: Could not access microphone. Please check browser permissions.";
+                return false;
+            }
+        }
+
+        startBtn.onclick = async () => {
+            if (await setupAudioContext() && await setupAudioRecording()) {
+                setupWebSocket();
+            }
+        };
+
+        muteBtn.onclick = () => {
+            if (!window.audioProcessor) return;
+
+            isMuted = !isMuted;
+            
+            if (!isMuted) {
+                // Start recording
+                muteBtn.textContent = 'Stop Speaking';
+                studentOutput.textContent = '🎤 Recording...';
+                sessionStatus.textContent = "Speaking";
+                
+                // Send unmute control message
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({
+                        type: 'control',
+                        control: 'unmute'
+                    }));
+                }
+            } else {
+                // Stop recording
+                muteBtn.textContent = 'Start Speaking';
+                studentOutput.textContent = '🔇 Muted';
+                sessionStatus.textContent = "Listening";
+                
+                // Send mute control message
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({
+                        type: 'control',
+                        control: 'mute'
+                    }));
+                }
+            }
+        };
+
+        endBtn.onclick = () => {
+            endViva();
+        };
+    </script>
+</body>
+</html>

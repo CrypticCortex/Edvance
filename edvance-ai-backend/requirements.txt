@@ -12,6 +12,7 @@ pydantic-settings
 firebase-admin
 google-cloud-aiplatform
 google-cloud-speech
+google-cloud-texttospeech
 google-cloud-storage
 google-cloud-documentai
 google-cloud-discoveryengine
@@ -19,6 +20,9 @@ google-cloud-discoveryengine
 # Vertex AI RAG and Embeddings
 google-cloud-aiplatform
 vertexai
+
+# Google GenAI SDK for Gemini Live
+google-genai
 
 # For handling multipart/form-data (file uploads)
 python-multipart

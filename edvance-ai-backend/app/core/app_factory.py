@@ -14,24 +14,17 @@ from app.api.v1 import simple_assessments as assessments_router
 from app.api.v1 import rag_assessments as rag_router
 from app.api.v1 import personalized_learning as learning_router
 from app.api.v1 import lessons as lessons_router
+# NOTE: The viva_router is INTENTIONALLY omitted here
 
 def create_app() -> FastAPI:
     """
-    Create and configure the FastAPI application.
-    
-    Returns:
-        The configured FastAPI application
+    Creates and configures the ADK-based part of the application.
     """
-    # Initialize Firebase before anything else
     initialize_firebase()
     
-    # Create the base FastAPI app from the orchestrator agent directory
     app = get_fast_api_app(agents_dir="./app/agents", web=True)
     
-    # Configure middleware
-    configure_middleware(app)
-    
-    # Include routers
+    # Routers for the ADK app
     app.include_router(auth_router.router, prefix="/v1/auth", tags=["Authentication"])
     app.include_router(agent_router.router, prefix="/v1/agent", tags=["Agent"])
     app.include_router(documents_router.router, prefix="/v1/documents", tags=["Documents"])
@@ -41,34 +34,15 @@ def create_app() -> FastAPI:
     app.include_router(learning_router.router, prefix="/v1/learning", tags=["Personalized Learning"])
     app.include_router(lessons_router.router, prefix="/v1/lessons", tags=["Lessons"])
     
-    # Add a root health check
+    # Health checks for the ADK app
     @app.get("/", tags=["Health"])
     async def root():
-        return {
-            "message": "Edvance AI - Core Teacher Workflow API",
-            "status": "running",
-            "version": "1.0.0",
-            "description": "Streamlined API for essential teacher journey - only core endpoints shown",
-            "total_core_endpoints": 22,
-            "documentation": "See COMPLETE_TEACHER_JOURNEY.md for full workflow guide"
-        }
+        return {"message": "Edvance AI - Core ADK App"}
     
     @app.get("/health", tags=["Health"])
     async def health_check():
-        return {
-            "status": "healthy",
-            "message": "Core teacher workflow API operational",
-            "core_features": [
-                "Authentication & Profile Management",
-                "Student Data Management", 
-                "AI Learning Path Generation",
-                "Ultra-Fast Lesson Creation",
-                "Intelligent Chatbot Support",
-                "Real-Time Analytics"
-            ]
-        }
+        return {"status": "healthy", "message": "ADK app is operational"}
     
-    # Configure streamlined documentation (only core teacher workflow endpoints)
     configure_streamlined_docs(app)
     
     return app

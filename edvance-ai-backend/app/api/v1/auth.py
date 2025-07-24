@@ -1,5 +1,6 @@
 # FILE: app/api/v1/auth.py
 
+from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, status, Depends
 # Make sure to import UserProfileUpdate
 from app.models import UserCreate, UserInDB, UserProfileUpdate
@@ -106,3 +107,17 @@ def logout_user(current_user: dict = Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred during logout: {str(e)}"
         )
+    
+
+# ADD THIS ENDPOINT AT THE END OF THE FILE
+@router.get("/verify-token", response_model=Dict[str, Any], tags=["Authentication"])
+def verify_token_test(current_user: dict = Depends(get_current_user)):
+    """
+    A simple test endpoint to verify if a Firebase ID token is valid.
+    This helps diagnose authentication and permission issues.
+    """
+    return {
+        "status": "success",
+        "message": "Token is valid.",
+        "decoded_token": current_user
+    }

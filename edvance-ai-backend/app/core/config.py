@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Gemini Model Settings
     gemini_model_name: str = "gemini-2.5-pro"
+    gemini_api_key: str = ""
     
     # Google GenAI Configuration
     google_genai_use_vertexai: bool = False

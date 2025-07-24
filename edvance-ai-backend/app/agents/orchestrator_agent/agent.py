@@ -6,6 +6,7 @@ from app.agents.teacher_onboarding_agent.agent import root_agent as teacher_onbo
 from app.agents.learning_path_agent.agent import root_agent as learning_path_agent
 from app.agents.lesson_agent.agent import lesson_agent
 from app.core.config import settings
+from app.agents.viva_agent.agent import viva_agent # Import the new agent
 
 root_agent = Agent(
     model=settings.gemini_model_name,
@@ -38,7 +39,11 @@ root_agent = Agent(
          - Provides real-time chatbot support for student questions
          - Adapts lesson difficulty based on student performance
          - Manages lesson progress and completion tracking
-      
+      4. **Viva Agent** - Interactive oral exams:
+        - Conducts vivas in English, Telugu, and Tamil
+        - Asks questions based on learning path topics
+        - Evaluates spoken responses in real-time
+    
       **Routing Logic:**
       
       **Route to Teacher Onboarding Agent for:**
@@ -65,6 +70,10 @@ root_agent = Agent(
       - Lesson progress management
       - Content adaptation and regeneration
       - Slide-by-slide learning experiences
+
+      **Route to Viva Agent for:**
+    - "viva", "oral exam", "speaking test"
+    - Any voice-based assessment
       
       **Decision Process:**
       1. Analyze the user's request
@@ -83,5 +92,6 @@ root_agent = Agent(
     sub_agents=[
         teacher_onboarding_agent,
         lesson_agent,
+        viva_agent,
     ],
 )
