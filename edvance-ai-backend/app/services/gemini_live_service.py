@@ -217,79 +217,89 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
                 async for response in turn:
                     logger.info(f"Processing response: {type(response)} for session {session_id}")
                     
-                    # Check for server_content which contains the actual data
+                    # Flag to track if we've processed audio for this response
+                    audio_processed = False
+                    text_processed = False
+                    
+                    # Primary method: Check server_content for model_turn with parts
                     if hasattr(response, 'server_content') and response.server_content:
                         server_content = response.server_content
                         logger.info(f"Server content type: {type(server_content)}")
                         
-                        # Check if server_content has audio data
                         if hasattr(server_content, 'model_turn') and server_content.model_turn:
                             model_turn = server_content.model_turn
                             if hasattr(model_turn, 'parts') and model_turn.parts:
                                 for part in model_turn.parts:
-                                    if hasattr(part, 'inline_data') and part.inline_data:
+                                    if hasattr(part, 'inline_data') and part.inline_data and not audio_processed:
                                         if hasattr(part.inline_data, 'data') and part.inline_data.data:
                                             logger.info(f"Received audio data: {len(part.inline_data.data)} bytes for session {session_id}")
                                             await audio_queue.put(part.inline_data.data)
-                                            continue
-                                    elif hasattr(part, 'text') and part.text:
+                                            audio_processed = True
+                                    elif hasattr(part, 'text') and part.text and not text_processed:
                                         logger.info(f"AI response text: {part.text}")
                                         session.conversation_history.append(
                                             VivaMessage(sender="agent", text=part.text)
                                         )
-                                        continue
+                                        text_processed = True
                     
-                    # Fallback: Check direct attributes
-                    if hasattr(response, 'data') and response.data:
-                        logger.info(f"Received audio data (direct): {len(response.data)} bytes for session {session_id}")
-                        await audio_queue.put(response.data)
+                    # Skip further processing if we already found audio/text
+                    if audio_processed or text_processed:
                         continue
                     
-                    # Handle text responses (for logging/history)
-                    if hasattr(response, 'text') and response.text:
+                    # Fallback 1: Check direct attributes (only if not already processed)
+                    if hasattr(response, 'data') and response.data and not audio_processed:
+                        logger.info(f"Received audio data (direct): {len(response.data)} bytes for session {session_id}")
+                        await audio_queue.put(response.data)
+                        audio_processed = True
+                        continue
+                    
+                    if hasattr(response, 'text') and response.text and not text_processed:
                         logger.info(f"AI response text (direct): {response.text}")
                         session.conversation_history.append(
                             VivaMessage(sender="agent", text=response.text)
                         )
+                        text_processed = True
                         continue
                     
-                    # Debug: Log the actual structure of the response
-                    logger.info(f"Response structure for session {session_id}: {response}")
-                    if hasattr(response, '__dict__'):
-                        logger.info(f"Response dict: {response.__dict__}")
+                    # Skip model_dump processing if we already processed audio/text
+                    if audio_processed or text_processed:
+                        continue
                     
-                    # Try to access the response using model_dump() if available
+                    # Fallback 2: Try model_dump() only if nothing processed yet
                     if hasattr(response, 'model_dump'):
                         try:
                             response_data = response.model_dump()
                             logger.info(f"Response model_dump: {response_data}")
                             
                             # Look for audio data in the dumped structure
-                            if 'server_content' in response_data:
+                            if 'server_content' in response_data and not audio_processed:
                                 server_content = response_data['server_content']
                                 if server_content and 'model_turn' in server_content:
                                     model_turn = server_content['model_turn']
                                     if model_turn and 'parts' in model_turn:
                                         for part in model_turn['parts']:
-                                            if 'inline_data' in part and part['inline_data']:
+                                            if 'inline_data' in part and part['inline_data'] and not audio_processed:
                                                 inline_data = part['inline_data']
                                                 if 'data' in inline_data and inline_data['data']:
                                                     # Found audio data!
                                                     audio_data = base64.b64decode(inline_data['data'])
                                                     logger.info(f"Found audio data in model_dump: {len(audio_data)} bytes for session {session_id}")
                                                     await audio_queue.put(audio_data)
-                                                    continue
-                                            elif 'text' in part and part['text']:
+                                                    audio_processed = True
+                                                    break
+                                            elif 'text' in part and part['text'] and not text_processed:
                                                 logger.info(f"Found text in model_dump: {part['text']}")
                                                 session.conversation_history.append(
                                                     VivaMessage(sender="agent", text=part['text'])
                                                 )
-                                                continue
+                                                text_processed = True
+                                                break
                         except Exception as e:
                             logger.error(f"Error processing model_dump: {e}")
                     
-                    # Log any other response attributes for debugging
-                    logger.info(f"Response attributes: {dir(response)}")
+                    # Only log debug info if nothing was processed
+                    if not audio_processed and not text_processed:
+                        logger.debug(f"No audio or text found in response for session {session_id}")
                         
         except Exception as e:
             logger.error(f"Error in live response handler for session {session_id}: {e}")
