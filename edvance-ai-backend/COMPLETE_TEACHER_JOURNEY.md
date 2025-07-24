@@ -8,14 +8,17 @@ This document provides a comprehensive guide through the complete teacher workfl
 
 ## 🚪 Phase 1: Teacher Authentication & Setup
 
-### 1.1 Teacher Account Creation
+### 1.1 Teacher Account Creation (Updated)
 
 **Endpoint**: `POST /v1/auth/signup`
 
 ```json
 {
   "email": "teacher@school.edu",
-  "password": "secure_password"
+  "password": "secure_password",
+  "role": "teacher", // "teacher" or "student"
+  "first_name": "Jane",
+  "last_name": "Doe"
 }
 ```
 
@@ -23,7 +26,7 @@ This document provides a comprehensive guide through the complete teacher workfl
 - Creates Firebase Authentication account
 - Generates unique teacher UID
 - Initializes teacher document in Firestore
-- Sets up empty subjects array for teaching specializations
+- Stores role, first_name, last_name, and sets up empty subjects array
 
 **Response**:
 ```json
@@ -31,26 +34,64 @@ This document provides a comprehensive guide through the complete teacher workfl
   "uid": "teacher_uid_abc123",
   "email": "teacher@school.edu",
   "created_at": "2025-07-21T10:00:00Z",
-  "subjects": []
+  "subjects": [],
+  "role": "teacher",
+  "first_name": "Jane",
+  "last_name": "Doe"
 }
 ```
 
-### 1.2 Teacher Login & Profile Setup
+### 1.2 Teacher Login & Profile Setup (Updated)
 
 **Endpoint**: `GET /v1/auth/me`
 
-Teachers authenticate using Firebase tokens and can view/update their profile.
+Teachers authenticate using Firebase tokens and can view their profile, which now includes:
+- `uid`, `email`, `created_at`, `subjects`, `role`, `first_name`, `last_name`
+
+**Example Response**:
+```json
+{
+  "uid": "teacher_uid_abc123",
+  "email": "teacher@school.edu",
+  "created_at": "2025-07-21T10:00:00Z",
+  "subjects": ["Mathematics", "Science"],
+  "role": "teacher",
+  "first_name": "Jane",
+  "last_name": "Doe"
+}
+```
 
 **Profile Update**: `PUT /v1/auth/me/profile`
 
 ```json
 {
   "subjects": ["Mathematics", "Science", "English"],
-  "grade_levels": [4, 5, 6],
-  "school_name": "Sunshine Elementary",
-  "teaching_experience_years": 8
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "role": "teacher"
 }
 ```
+
+- The profile update endpoint supports updating name, role, and subjects.
+
+### 1.3 Logout (New)
+
+**Frontend Logic**:
+- Signs out from Firebase
+- Removes idToken from localStorage
+- Redirects to `/auth/login`
+
+**Backend Endpoint**: `POST /v1/auth/logout`
+- Revokes refresh tokens for the user
+
+### 1.4 Error Handling & Session Management (New)
+- Improved error messages for login failures (invalid credentials, user not found, etc.)
+- Graceful handling of expired/invalid sessions: users are redirected to login with a clear message
+- Unauthenticated access to `/dashboard` is redirected to `/auth/login`
+
+### 1.5 Role-Based Dashboard (New)
+- The dashboard UI and features are rendered based on the user's `role` (teacher or student)
+- User's name (first and last) is displayed throughout the dashboard if available
 
 ---
 
