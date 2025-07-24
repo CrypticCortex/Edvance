@@ -497,7 +497,15 @@
                 if (data.type === 'audio_response') {
                     // Handle native audio response from Gemini Live API
                     await playAudioData(data.audio);
-                    agentOutput.textContent = "🔊 AI is speaking (native audio)...";
+                    // Temporary: Show that AI is speaking while we wait for transcription
+                    agentOutput.textContent = "🔊 AI is speaking... (waiting for transcription)";
+                } else if (data.type === 'transcription') {
+                    // Handle transcription updates
+                    if (data.sender === 'agent') {
+                        agentOutput.textContent = `🤖 AI: ${data.text}`;
+                    } else if (data.sender === 'student') {
+                        studentOutput.textContent = `👤 You: ${data.text}`;
+                    }
                 } else if (data.type === 'session_ready') {
                     agentOutput.textContent = data.message;
                     sessionStatus.textContent = "Ready";

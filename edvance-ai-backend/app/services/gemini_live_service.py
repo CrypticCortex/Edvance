@@ -25,6 +25,7 @@ class GeminiLiveService:
         self.sessions: Dict[str, VivaSession] = {}
         self.live_sessions: Dict[str, Any] = {}  # Store actual live session objects
         self.audio_queues: Dict[str, asyncio.Queue] = {}  # Audio output queues per session
+        self.transcription_queues: Dict[str, asyncio.Queue] = {}  # Transcription queues per session
         self._client = None
 
     @property
@@ -116,9 +117,9 @@ Guidelines:
 Start by warmly welcoming the student and asking if they are ready to begin the viva on {topic_name}."""
 
     def _create_live_config(self, system_instruction: str) -> types.LiveConnectConfig:
-        """Create Live API configuration with native audio support."""
+        """Create Live API configuration with native audio support and transcription."""
         return types.LiveConnectConfig(
-            response_modalities=["AUDIO"],  # Native audio response
+            response_modalities=["AUDIO"],  # Audio only - transcription comes automatically
             media_resolution="MEDIA_RESOLUTION_MEDIUM",
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
@@ -165,6 +166,7 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
             # Store session objects first
             self.sessions[session_id] = session
             self.audio_queues[session_id] = asyncio.Queue()
+            self.transcription_queues[session_id] = asyncio.Queue()
             
             # Start the Live API session management task
             asyncio.create_task(self._manage_live_session(session_id, config))
@@ -198,6 +200,82 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
             self.live_sessions.pop(session_id, None)
             logger.info(f"Live API session ended for {session_id}")
 
+    async def _extract_transcriptions(self, session_id: str, server_content):
+        """Extract input and output transcriptions from server content."""
+        session = self.sessions.get(session_id)
+        if not session:
+            return
+            
+        try:
+            logger.info(f"🔍 EXTRACTING TRANSCRIPTIONS - server_content type: {type(server_content)}")
+            
+            # Debug: Log all attributes of server_content
+            if hasattr(server_content, '__dict__'):
+                logger.info(f"🔍 SERVER_CONTENT ATTRIBUTES: {list(server_content.__dict__.keys())}")
+            
+            # Check for input transcription (user speech)
+            transcription_fields = ['input_transcription', 'transcription', 'input_text']
+            for field in transcription_fields:
+                if hasattr(server_content, field):
+                    value = getattr(server_content, field)
+                    if value:
+                        logger.info(f"🎯 USER TRANSCRIPTION FOUND in {field}: {value}")
+                        session.conversation_history.append(VivaMessage(sender="student", text=value))
+                        await self._send_transcription_update(session_id, "student", value)
+                        break
+            
+            # Check for output transcription (AI speech)
+            output_fields = ['output_transcription', 'text', 'output_text']
+            for field in output_fields:
+                if hasattr(server_content, field):
+                    value = getattr(server_content, field)
+                    if value:
+                        logger.info(f"🎯 AI TRANSCRIPTION FOUND in {field}: {value}")
+                        session.conversation_history.append(VivaMessage(sender="agent", text=value))
+                        await self._send_transcription_update(session_id, "agent", value)
+                        break
+            
+            # Check model_turn for transcription data
+            if hasattr(server_content, 'model_turn') and server_content.model_turn:
+                model_turn = server_content.model_turn
+                logger.info(f"🔍 MODEL_TURN found, checking for transcriptions...")
+                
+                if hasattr(model_turn, '__dict__'):
+                    logger.info(f"🔍 MODEL_TURN ATTRIBUTES: {list(model_turn.__dict__.keys())}")
+                
+                # Check for text in model_turn parts
+                if hasattr(model_turn, 'parts') and model_turn.parts:
+                    for i, part in enumerate(model_turn.parts):
+                        logger.info(f"🔍 PART {i} type: {type(part)}")
+                        if hasattr(part, '__dict__'):
+                            logger.info(f"🔍 PART {i} ATTRIBUTES: {list(part.__dict__.keys())}")
+                        
+                        if hasattr(part, 'text') and part.text:
+                            logger.info(f"🎯 PART TEXT TRANSCRIPTION FOUND: {part.text}")
+                            session.conversation_history.append(VivaMessage(sender="agent", text=part.text))
+                            await self._send_transcription_update(session_id, "agent", part.text)
+                            break
+                
+        except Exception as e:
+            logger.error(f"Error extracting transcriptions for session {session_id}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def _send_transcription_update(self, session_id: str, sender: str, text: str):
+        """Send transcription update to WebSocket clients."""
+        # Store transcription update in a queue for WebSocket delivery
+        transcription_queue = getattr(self, 'transcription_queues', {}).get(session_id)
+        if transcription_queue:
+            try:
+                await transcription_queue.put({
+                    "type": "transcription",
+                    "sender": sender,
+                    "text": text,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error sending transcription update: {e}")
+
     async def _handle_live_responses(self, session_id: str, live_session):
         """Background task to handle responses from the Live API session."""
         session = self.sessions.get(session_id)
@@ -217,6 +295,24 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
                 async for response in turn:
                     logger.info(f"Processing response: {type(response)} for session {session_id}")
                     
+                    # Debug: Check if response has text attribute
+                    if hasattr(response, 'text'):
+                        if response.text:
+                            logger.info(f"🔍 Response has text attribute: '{response.text}'")
+                        else:
+                            logger.info(f"🔍 Response has text attribute but it's empty/None")
+                    else:
+                        logger.info(f"🔍 Response does NOT have text attribute")
+                    
+                    # Debug: Check if response has data attribute
+                    if hasattr(response, 'data'):
+                        if response.data:
+                            logger.info(f"🔍 Response has data attribute: {len(response.data)} bytes")
+                        else:
+                            logger.info(f"🔍 Response has data attribute but it's empty/None")
+                    else:
+                        logger.info(f"🔍 Response does NOT have data attribute")
+                    
                     # Flag to track if we've processed audio for this response
                     audio_processed = False
                     text_processed = False
@@ -225,6 +321,9 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
                     if hasattr(response, 'server_content') and response.server_content:
                         server_content = response.server_content
                         logger.info(f"Server content type: {type(server_content)}")
+                        
+                        # Extract transcriptions from server_content
+                        await self._extract_transcriptions(session_id, server_content)
                         
                         if hasattr(server_content, 'model_turn') and server_content.model_turn:
                             model_turn = server_content.model_turn
@@ -254,10 +353,12 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
                         continue
                     
                     if hasattr(response, 'text') and response.text and not text_processed:
-                        logger.info(f"AI response text (direct): {response.text}")
+                        logger.info(f"🎯 TRANSCRIPTION FOUND - AI response text (direct): {response.text}")
                         session.conversation_history.append(
                             VivaMessage(sender="agent", text=response.text)
                         )
+                        # Send transcription update via WebSocket
+                        await self._send_transcription_update(session_id, "agent", response.text)
                         text_processed = True
                         continue
                     
@@ -358,6 +459,22 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
             return None
         except Exception as e:
             logger.error(f"Error getting audio response for session {session_id}: {e}")
+            return None
+
+    async def get_transcription_update(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get transcription update from the queue."""
+        transcription_queue = self.transcription_queues.get(session_id)
+        if not transcription_queue:
+            return None
+            
+        try:
+            # Wait for transcription data with short timeout
+            transcription_data = await asyncio.wait_for(transcription_queue.get(), timeout=0.1)
+            return transcription_data
+        except asyncio.TimeoutError:
+            return None
+        except Exception as e:
+            logger.error(f"Error getting transcription update for session {session_id}: {e}")
             return None
 
     async def handle_audio_input(self, session_id: str, audio_data: bytes) -> Dict[str, Any]:
@@ -492,6 +609,7 @@ Respond ONLY with valid JSON."""
             self.sessions.pop(session_id, None)
             self.live_sessions.pop(session_id, None)
             self.audio_queues.pop(session_id, None)
+            self.transcription_queues.pop(session_id, None)
 
             return {
                 "summary": "Viva completed successfully!",

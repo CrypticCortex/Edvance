@@ -39,6 +39,27 @@ async def stream_audio_responses(websocket: WebSocket, session_id: str):
         import traceback
         traceback.print_exc()
 
+async def stream_transcription_updates(websocket: WebSocket, session_id: str):
+    """Background task to stream transcription updates to the client."""
+    logger.info(f"Starting transcription streaming task for session {session_id}")
+    try:
+        while True:
+            # Get transcription update from the service
+            transcription_data = await gemini_live_service.get_transcription_update(session_id)
+            if transcription_data:
+                logger.info(f"Sending transcription to client: {transcription_data['sender']} - {transcription_data['text']}")
+                await websocket.send_json(transcription_data)
+            else:
+                # Small delay to prevent busy waiting
+                await asyncio.sleep(0.05)
+                
+    except asyncio.CancelledError:
+        logger.info(f"Transcription streaming task cancelled for session {session_id}")
+    except Exception as e:
+        logger.error(f"Error in transcription streaming for session {session_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
 @router.websocket("/{session_id}/speak")
 async def websocket_endpoint(
     websocket: WebSocket, 
@@ -102,8 +123,9 @@ async def websocket_endpoint(
                 await websocket.send_json({"error": "Failed to initialize AI session", "agent_response": "I'm sorry, there was an error starting our conversation. Please try again."})
                 return
 
-        # Start background task to stream audio responses
+        # Start background tasks to stream audio responses and transcriptions
         audio_task = asyncio.create_task(stream_audio_responses(websocket, session_id))
+        transcription_task = asyncio.create_task(stream_transcription_updates(websocket, session_id))
         
         while True:
             try:
@@ -154,6 +176,7 @@ async def websocket_endpoint(
             except WebSocketDisconnect:
                 logger.info(f"WebSocket disconnected for session {session_id}")
                 audio_task.cancel()
+                transcription_task.cancel()
                 break
             except Exception as e:
                 logger.error(f"Error processing WebSocket message for session {session_id}: {e}")
