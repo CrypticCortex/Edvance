@@ -11,6 +11,9 @@ from datetime import datetime
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
+    role: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -24,7 +27,10 @@ class UserInDB(BaseModel):
     uid: str
     email: EmailStr
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    subjects: Optional[List[str]] = [] # <-- ADD THIS LINE
+    subjects: Optional[List[str]] = []
+    role: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
 class UserProfileUpdate(BaseModel): # <-- ADD THIS NEW MODEL
     """

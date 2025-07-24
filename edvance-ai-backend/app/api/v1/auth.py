@@ -20,18 +20,17 @@ def create_user(user_in: UserCreate):
             email=user_in.email,
             password=user_in.password
         )
-        
         new_user_data = {
             "uid": user_record.uid,
             "email": user_record.email,
             "created_at": datetime.utcnow(),
-            "subjects": []  # <-- ADD THIS LINE to initialize with an empty list
+            "subjects": [],
+            "role": user_in.role or "student",
+            "first_name": user_in.first_name or None,
+            "last_name": user_in.last_name or None
         }
-        
         db.collection("users").document(user_record.uid).set(new_user_data)
-        
         return new_user_data
-
     except EmailAlreadyExistsError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -52,7 +51,11 @@ def get_user_profile(current_user: dict = Depends(get_current_user)):
     try:
         user_doc = db.collection("users").document(user_uid).get()
         if user_doc.exists:
-            return user_doc.to_dict()
+            user_data = user_doc.to_dict()
+            # Ensure 'role' is always present in the response (default to 'student' if missing)
+            if "role" not in user_data:
+                user_data["role"] = "student"
+            return user_data
         else:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in database.")
     except Exception as e:
