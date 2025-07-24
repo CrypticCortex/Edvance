@@ -286,15 +286,18 @@
             }
         }
 
-        // Advanced continuous audio streaming system
-        let audioRingBuffer = new Float32Array(48000 * 5); // 5 seconds ring buffer at 24kHz
+        // Improved continuous audio streaming system with gap prevention
+        let audioRingBuffer = new Float32Array(48000 * 10); // 10 seconds ring buffer at 24kHz
         let writePosition = 0;
         let readPosition = 0;
         let isPlaying = false;
         let audioSource = null;
         let scriptProcessor = null;
-        const BUFFER_SIZE = 24000; // 1 second buffer before starting
+        const MIN_BUFFER_SIZE = 4800; // 200ms minimum buffer before starting
+        const LOW_BUFFER_THRESHOLD = 2400; // 100ms - restart threshold
         const SAMPLE_RATE = 24000;
+        let bufferUnderrunCount = 0;
+        let lastBufferCheck = 0;
 
         function getBufferSize() {
             let size = writePosition - readPosition;
@@ -324,12 +327,17 @@
                     writePosition = (writePosition + 1) % audioRingBuffer.length;
                 }
 
-                // Start continuous playback if we have enough buffered audio
-                if (!isPlaying && getBufferSize() >= BUFFER_SIZE) {
+                const currentBufferSize = getBufferSize();
+                console.log(`Buffered ${samples.length} samples, total buffer: ${currentBufferSize} samples (${(currentBufferSize/SAMPLE_RATE*1000).toFixed(0)}ms)`);
+
+                // Start or restart playback based on buffer conditions
+                if (!isPlaying && currentBufferSize >= MIN_BUFFER_SIZE) {
                     startContinuousPlayback();
+                } else if (isPlaying && currentBufferSize >= LOW_BUFFER_THRESHOLD && bufferUnderrunCount > 0) {
+                    // Reset underrun counter when buffer recovers
+                    bufferUnderrunCount = 0;
+                    console.log('Buffer recovered, continuing playback');
                 }
-                
-                console.log(`Buffered ${samples.length} samples, total buffer: ${getBufferSize()} samples`);
                 
             } catch (error) {
                 console.error('Error buffering audio:', error);
@@ -341,6 +349,7 @@
             if (isPlaying) return;
             
             isPlaying = true;
+            bufferUnderrunCount = 0;
             console.log('Starting continuous audio playback');
 
             try {
@@ -351,21 +360,48 @@
                     const outputBuffer = event.outputBuffer;
                     const outputData = outputBuffer.getChannelData(0);
                     const bufferSize = getBufferSize();
+                    const outputLength = outputData.length;
                     
-                    // Fill the output buffer from our ring buffer
-                    for (let i = 0; i < outputData.length; i++) {
-                        if (bufferSize > i) {
+                    // Check if we have enough data for this output buffer
+                    if (bufferSize >= outputLength) {
+                        // Fill the output buffer from our ring buffer
+                        for (let i = 0; i < outputLength; i++) {
                             outputData[i] = audioRingBuffer[readPosition];
                             readPosition = (readPosition + 1) % audioRingBuffer.length;
-                        } else {
-                            // Not enough data, output silence
+                        }
+                    } else if (bufferSize > 0) {
+                        // Partial buffer - fill what we can, pad with silence
+                        let i = 0;
+                        for (; i < bufferSize; i++) {
+                            outputData[i] = audioRingBuffer[readPosition];
+                            readPosition = (readPosition + 1) % audioRingBuffer.length;
+                        }
+                        // Fill rest with silence
+                        for (; i < outputLength; i++) {
                             outputData[i] = 0;
+                        }
+                        bufferUnderrunCount++;
+                        console.warn(`Buffer underrun ${bufferUnderrunCount}: only ${bufferSize} samples available, needed ${outputLength}`);
+                    } else {
+                        // No data available - output silence
+                        for (let i = 0; i < outputLength; i++) {
+                            outputData[i] = 0;
+                        }
+                        bufferUnderrunCount++;
+                        
+                        // Don't stop immediately - wait for buffer to recover
+                        if (bufferUnderrunCount > 10) { // ~100ms of silence
+                            console.log(`Stopping playback after ${bufferUnderrunCount} underruns`);
+                            stopContinuousPlayback();
                         }
                     }
                     
-                    // Stop if we've run out of data
-                    if (getBufferSize() === 0) {
-                        stopContinuousPlayback();
+                    // Log buffer status periodically
+                    const now = Date.now();
+                    if (now - lastBufferCheck > 1000) { // Every second
+                        const remainingMs = (getBufferSize() / SAMPLE_RATE * 1000).toFixed(0);
+                        console.log(`Buffer status: ${getBufferSize()} samples (${remainingMs}ms remaining)`);
+                        lastBufferCheck = now;
                     }
                 };
 
@@ -387,6 +423,14 @@
                 scriptProcessor.disconnect();
                 scriptProcessor = null;
             }
+            
+            // Schedule a check to restart playback if buffer fills up again
+            setTimeout(() => {
+                if (!isPlaying && getBufferSize() >= MIN_BUFFER_SIZE) {
+                    console.log('Auto-restarting playback after buffer recovery');
+                    startContinuousPlayback();
+                }
+            }, 100);
         }
 
         function generateSessionId() {

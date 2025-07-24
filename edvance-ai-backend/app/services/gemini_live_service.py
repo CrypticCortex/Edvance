@@ -297,14 +297,68 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
                         except Exception as e:
                             logger.error(f"Error processing model_dump: {e}")
                     
-                    # Only log debug info if nothing was processed
+                    # Enhanced debugging: Check if this is an audio response based on usage metadata
                     if not audio_processed and not text_processed:
-                        logger.debug(f"No audio or text found in response for session {session_id}")
+                        # Check usage metadata for audio tokens
+                        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                            usage = response.usage_metadata
+                            if hasattr(usage, 'response_tokens_details') and usage.response_tokens_details:
+                                for token_detail in usage.response_tokens_details:
+                                    if hasattr(token_detail, 'modality') and str(token_detail.modality) == "MediaModality.AUDIO":
+                                        logger.warning(f"Audio tokens detected ({token_detail.token_count}) but no audio data found for session {session_id}")
+                                        
+                                        # Try to find audio data in different locations
+                                        logger.info(f"Searching for audio data in response object...")
+                                        
+                                        # Check if response has 'data' attribute directly
+                                        if hasattr(response, 'data'):
+                                            logger.info(f"Response.data type: {type(response.data)}, value: {response.data}")
+                                        
+                                        # Check all attributes of the response
+                                        for attr_name in dir(response):
+                                            if not attr_name.startswith('_'):
+                                                try:
+                                                    attr_value = getattr(response, attr_name)
+                                                    if attr_value is not None and not callable(attr_value):
+                                                        logger.info(f"Response.{attr_name}: {type(attr_value)} = {attr_value}")
+                                                        
+                                                        # Check if this attribute contains audio data
+                                                        if isinstance(attr_value, bytes) and len(attr_value) > 0:
+                                                            logger.info(f"Found bytes data in {attr_name}: {len(attr_value)} bytes")
+                                                            await audio_queue.put(attr_value)
+                                                            audio_processed = True
+                                                            break
+                                                except Exception as e:
+                                                    logger.debug(f"Error accessing {attr_name}: {e}")
+                                        
+                                        if audio_processed:
+                                            break
+                        
+                        if not audio_processed and not text_processed:
+                            logger.debug(f"No audio or text found in response for session {session_id}")
                         
         except Exception as e:
             logger.error(f"Error in live response handler for session {session_id}: {e}")
             import traceback
             traceback.print_exc()
+
+
+
+    async def get_audio_response(self, session_id: str) -> Optional[bytes]:
+        """Get audio response data from the queue."""
+        audio_queue = self.audio_queues.get(session_id)
+        if not audio_queue:
+            return None
+            
+        try:
+            # Wait for audio data with timeout
+            audio_data = await asyncio.wait_for(audio_queue.get(), timeout=1.0)
+            return audio_data
+        except asyncio.TimeoutError:
+            return None
+        except Exception as e:
+            logger.error(f"Error getting audio response for session {session_id}: {e}")
+            return None
 
     async def handle_audio_input(self, session_id: str, audio_data: bytes) -> Dict[str, Any]:
         """Handle audio input from the student using Live API."""
@@ -326,22 +380,6 @@ Start by warmly welcoming the student and asking if they are ready to begin the 
         except Exception as e:
             logger.error(f"Error handling audio input for session {session_id}: {e}")
             return {"error": str(e)}
-
-    async def get_audio_response(self, session_id: str) -> Optional[bytes]:
-        """Get audio response data from the queue."""
-        audio_queue = self.audio_queues.get(session_id)
-        if not audio_queue:
-            return None
-            
-        try:
-            # Wait for audio data with timeout
-            audio_data = await asyncio.wait_for(audio_queue.get(), timeout=1.0)
-            return audio_data
-        except asyncio.TimeoutError:
-            return None
-        except Exception as e:
-            logger.error(f"Error getting audio response for session {session_id}: {e}")
-            return None
 
     async def handle_student_speech(self, session_id: str, student_speech: str) -> Dict[str, Any]:
         """Handles student speech through Gemini Live API (fallback for text input)."""
