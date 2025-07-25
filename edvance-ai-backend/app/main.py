@@ -18,9 +18,10 @@ app.include_router(viva_router.router)
 # Create the ADK-based app which contains all other HTTP routes
 adk_app = create_app()
 
-# Mount the entire ADK application. 
-# All requests that don't match the Viva router will be passed to this app.
-app.mount("/", adk_app)
+
+# Mount the entire ADK application at /adk. 
+# This allows FastAPI docs to remain accessible at /docs.
+app.mount("/adk", adk_app)
 
 
 if __name__ == "__main__":

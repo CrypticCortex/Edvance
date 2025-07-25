@@ -65,6 +65,11 @@ class LearningStep(BaseModel):
     content_text: Optional[str] = Field(None, description="Text content or instructions")
     estimated_duration_minutes: int = Field(default=15, description="Expected time to complete")
     
+    # VIVA Integration
+    has_viva: bool = Field(default=False, description="Whether this step includes a viva assessment")
+    viva_config: Optional[Dict[str, Any]] = Field(None, description="VIVA configuration for this step")
+    viva_session_id: Optional[str] = Field(None, description="Active or completed VIVA session ID")
+    
     # Dependencies
     prerequisites: List[str] = Field(default=[], description="Step IDs that must be completed first")
     addresses_gaps: List[str] = Field(default=[], description="Knowledge gap IDs this step addresses")

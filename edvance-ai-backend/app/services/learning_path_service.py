@@ -273,6 +273,53 @@ Generate the learning path now:"""
         
         return steps
     
+    async def get_next_step_for_student(self, student_id: str, path_id: str) -> Optional[Dict[str, Any]]:
+        """Get the next learning step for a student, with VIVA integration if applicable."""
+        
+        try:
+            path = await self.get_learning_path(path_id)
+            if not path or path.student_id != student_id:
+                return None
+            
+            # Find the next incomplete step
+            next_step = None
+            for step in path.steps:
+                if not step.is_completed:
+                    next_step = step
+                    break
+            
+            if not next_step:
+                return {"completed": True, "message": "All steps completed!"}
+            
+            # Prepare step data
+            step_data = {
+                "step_id": next_step.step_id,
+                "title": next_step.title,
+                "description": next_step.description,
+                "content_type": next_step.content_type,
+                "estimated_duration_minutes": next_step.estimated_duration_minutes,
+                "has_viva": next_step.content_type == "viva" or getattr(next_step, 'has_viva', False)
+            }
+            
+            # If this step has VIVA, include VIVA readiness info and auto-prepare session
+            if step_data["has_viva"]:
+                step_data["viva_ready"] = True
+                step_data["viva_topic"] = f"{next_step.topic} - {next_step.title}"
+                step_data["viva_difficulty"] = next_step.difficulty_level.value
+                step_data["viva_objective"] = next_step.learning_objective.value
+                
+                # Check if there's already an active VIVA session for this step
+                if hasattr(next_step, 'viva_session_id') and next_step.viva_session_id:
+                    step_data["existing_viva_session"] = next_step.viva_session_id
+                else:
+                    step_data["needs_viva_session"] = True
+            
+            return step_data
+            
+        except Exception as e:
+            logger.error(f"Error getting next step for student {student_id}: {str(e)}")
+            return None
+
     async def update_learning_path_progress(
         self,
         path_id: str,

@@ -24,13 +24,46 @@ class VivaService:
     async def start_viva(self, student_id: str, learning_step_id: str, language: str) -> VivaSession:
         """Starts a new viva session."""
         session_id = str(uuid.uuid4())
-        topic = "Introduction to Algebra" # This would be fetched from the learning step
+        
+        # Get the actual learning step data
+        learning_step = await self._get_learning_step_data(learning_step_id)
+        
+        if learning_step:
+            topic = learning_step.get("topic", "General Review Topic")
+            step_title = learning_step.get("title", topic)
+            description = learning_step.get("description", "")
+            difficulty = learning_step.get("difficulty_level", "medium")
+            learning_objective = learning_step.get("learning_objective", "understand")
+            content_text = learning_step.get("content_text", "")
+        else:
+            topic = "General Review Topic"
+            step_title = topic
+            description = ""
+            difficulty = "medium"
+            learning_objective = "understand"
+            content_text = ""
+        
         lang_name = self._get_language_name(language)
 
-        initial_prompt = f"""You are a friendly and encouraging AI examiner. 
-        Start a viva voce (oral exam) with the student.
-        The topic is '{topic}'. The language of the viva is {lang_name}.
-        Begin by warmly welcoming the student and asking if they are ready to start."""
+        # Create a more detailed prompt using learning step information
+        initial_prompt = f"""You are a friendly and encouraging AI examiner conducting a viva voce (oral exam).
+
+LEARNING STEP DETAILS:
+- Title: {step_title}
+- Topic: {topic}
+- Description: {description}
+- Difficulty Level: {difficulty}
+- Learning Objective: {learning_objective}
+- Content Focus: {content_text}
+
+VIVA INSTRUCTIONS:
+- Language: {lang_name}
+- Assess the student's understanding of the specific learning step content
+- Tailor questions to the {difficulty} difficulty level
+- Focus on the {learning_objective} learning objective
+- Be encouraging and supportive throughout
+
+Begin by warmly welcoming the student, briefly explaining what this viva will cover based on their learning step, and asking if they are ready to start."""
 
         try:
             response = await self.model.generate_content_async(initial_prompt)
@@ -60,20 +93,42 @@ class VivaService:
 
         session.conversation_history.append(VivaMessage(sender="student", text=student_speech))
 
-        # Construct the prompt for the AI
+        # Get learning step data for context
+        learning_step = await self._get_learning_step_data(session.learning_step_id)
+        
+        # Construct the prompt for the AI with learning step context
         history_str = "\n".join([f"{msg.sender}: {msg.text}" for msg in session.conversation_history])
         lang_name = self._get_language_name(session.language)
         
-        prompt = f"""You are an AI examiner conducting a viva in {lang_name} on the topic '{session.topic}'.
-        Below is the conversation history. The student has just spoken. 
-        Your task is to evaluate their last response and ask the next logical question.
-        Keep your questions clear and concise. Be encouraging.
+        if learning_step:
+            step_context = f"""
+LEARNING STEP CONTEXT:
+- Title: {learning_step.get('title', 'Unknown')}
+- Topic: {learning_step.get('topic', session.topic)}
+- Description: {learning_step.get('description', '')}
+- Difficulty Level: {learning_step.get('difficulty_level', 'medium')}
+- Learning Objective: {learning_step.get('learning_objective', 'understand')}
+- Content Focus: {learning_step.get('content_text', '')}
+"""
+        else:
+            step_context = f"Topic: {session.topic}"
+        
+        prompt = f"""You are an AI examiner conducting a viva in {lang_name}.
 
-        Conversation History:
-        {history_str}
+{step_context}
 
-        Agent, what is your next response?
-        """
+INSTRUCTIONS:
+- Evaluate the student's last response in the context of the learning step
+- Ask follow-up questions that assess their understanding of the specific learning objectives
+- Tailor question difficulty to match the learning step's difficulty level
+- Be encouraging and provide gentle guidance if needed
+- Focus on the core concepts from the learning step content
+
+Conversation History:
+{history_str}
+
+Based on the student's response and the learning step context, what is your next question or comment?
+"""
 
         try:
             response = await self.model.generate_content_async(prompt)
@@ -91,17 +146,43 @@ class VivaService:
         if not session:
             return {"summary": "Session not found."}
 
+        # Get learning step data for context-aware evaluation
+        learning_step = await self._get_learning_step_data(session.learning_step_id)
+        
         history_str = "\n".join([f"{msg.sender}: {msg.text}" for msg in session.conversation_history])
         lang_name = self._get_language_name(session.language)
 
-        prompt = f"""You are an AI examiner. The viva in {lang_name} on the topic '{session.topic}' has concluded. 
-        Based on the entire conversation history below, provide a final score out of 100 and brief, constructive feedback for the student.
+        if learning_step:
+            step_context = f"""
+LEARNING STEP EVALUATION CONTEXT:
+- Title: {learning_step.get('title', 'Unknown')}
+- Topic: {learning_step.get('topic', session.topic)}
+- Description: {learning_step.get('description', '')}
+- Difficulty Level: {learning_step.get('difficulty_level', 'medium')}
+- Learning Objective: {learning_step.get('learning_objective', 'understand')}
+- Content Focus: {learning_step.get('content_text', '')}
 
-        Conversation History:
-        {history_str}
+EVALUATION CRITERIA:
+- Assess understanding specific to this learning step's objectives
+- Consider the {learning_step.get('difficulty_level', 'medium')} difficulty level when scoring
+- Focus on whether the student achieved the {learning_step.get('learning_objective', 'understand')} learning objective
+- Evaluate comprehension of the specific content covered in this step
+"""
+        else:
+            step_context = f"Topic: {session.topic}"
 
-        Respond ONLY with a JSON object with two keys: "score" (an integer) and "feedback" (a string).
-        """
+        prompt = f"""You are an AI examiner. The viva in {lang_name} has concluded.
+
+{step_context}
+
+Based on the entire conversation history below and the learning step context, provide a final score out of 100 and brief, constructive feedback for the student.
+
+Conversation History:
+{history_str}
+
+Respond ONLY with a JSON object with two keys: "score" (an integer) and "feedback" (a string).
+The feedback should be specific to the learning step objectives and provide actionable guidance for improvement.
+"""
         
         try:
             response = await self.model.generate_content_async(prompt)
@@ -129,5 +210,51 @@ class VivaService:
             "score": session.score,
             "feedback": session.feedback
         }
+
+    async def _get_learning_step_data(self, learning_step_id: str) -> Dict[str, Any]:
+        """
+        Get learning step data from the learning path service.
+        
+        Args:
+            learning_step_id: The ID of the learning step.
+            
+        Returns:
+            Dictionary containing learning step data or None if not found.
+        """
+        try:
+            from app.core.firebase import db
+            from app.models.learning_models import LearningStep, DifficultyLevel, LearningObjectiveType
+            
+            logger.info(f"Fetching learning step data for: {learning_step_id}")
+            
+            # Search through learning paths to find the step
+            learning_paths_ref = db.collection("learning_paths")
+            docs = learning_paths_ref.get()
+            
+            for doc in docs:
+                path_data = doc.to_dict()
+                if "steps" in path_data:
+                    for step_data in path_data["steps"]:
+                        if step_data.get("step_id") == learning_step_id:
+                            logger.info(f"Found learning step: {step_data.get('title', 'Unknown')}")
+                            return {
+                                "step_id": step_data.get("step_id"),
+                                "title": step_data.get("title", "Learning Step"),
+                                "description": step_data.get("description", ""),
+                                "subject": step_data.get("subject", "General"),
+                                "topic": step_data.get("topic", "General"),
+                                "subtopic": step_data.get("subtopic"),
+                                "difficulty_level": step_data.get("difficulty_level", "medium"),
+                                "learning_objective": step_data.get("learning_objective", "understand"),
+                                "content_text": step_data.get("content_text", ""),
+                                "addresses_gaps": step_data.get("addresses_gaps", [])
+                            }
+            
+            logger.warning(f"Learning step {learning_step_id} not found")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching learning step data for {learning_step_id}: {str(e)}")
+            return None
 
 viva_service = VivaService()
