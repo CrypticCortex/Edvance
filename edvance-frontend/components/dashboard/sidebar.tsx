@@ -15,6 +15,7 @@ import {
   Target,
   MessageSquare,
   FileText,
+  Upload,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
@@ -25,6 +26,7 @@ const navigation = [
   { name: "Assessments", href: "/dashboard/assessments", icon: FileText },
   { name: "Learning Paths", href: "/dashboard/learning-paths", icon: Target },
   { name: "Lessons", href: "/dashboard/lessons", icon: BookOpen },
+  { name: "Documents", href: "/dashboard/documents/upload", icon: Upload },
   { name: "AI Agent", href: "/dashboard/ai-agent", icon: Brain },
   { name: "Analytics", href: "/dashboard/analytics", icon: TrendingUp },
   { name: "Chat Support", href: "/dashboard/chat", icon: MessageSquare },

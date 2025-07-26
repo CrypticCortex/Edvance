@@ -2,402 +2,524 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, BookOpen, Users, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { apiService, handleApiError } from "@/lib/api"
+import { ArrowLeft, Wand2, Eye, Save } from "lucide-react"
+import Link from "next/link"
 
-interface Question {
-    question_text: string
-    options: string[]
-    correct_answer: number
-    topic: string
-    difficulty: 'easy' | 'medium' | 'hard'
+interface AssessmentConfig {
+    name: string;
+    subject: string;
+    target_grade: number;
+    difficulty_level: 'easy' | 'medium' | 'hard';
+    topic: string;
+    question_count: number;
+    time_limit_minutes: number;
+}
+
+interface GeneratedQuestion {
+    question?: string;
+    question_text?: string;
+    text?: string;
+    prompt?: string;
+    options?: string[];
+    correct_answer?: string;
+    explanation?: string;
+    type?: string;
+    [key: string]: any; // Allow for additional fields from backend
+}
+
+interface GeneratedAssessment {
+    config_id?: string;
+    assessment_id?: string;
+    questions: GeneratedQuestion[];
+    metadata?: {
+        total_questions?: number;
+        estimated_duration?: number;
+        subject?: string;
+        grade?: number;
+        difficulty?: string;
+    };
+    [key: string]: any; // Allow for additional fields from backend
 }
 
 export default function CreateAssessmentPage() {
-    const [loading, setLoading] = useState(false)
-    const [assessment, setAssessment] = useState({
-        title: "",
-        subject: "",
-        grade: 5,
-        topics: [] as string[],
-        estimated_duration_minutes: 30,
-    })
-    const [questions, setQuestions] = useState<Question[]>([])
-    const [currentQuestion, setCurrentQuestion] = useState<Question>({
-        question_text: "",
-        options: ["", "", "", ""],
-        correct_answer: 0,
-        topic: "",
-        difficulty: "medium",
-    })
-    const [newTopic, setNewTopic] = useState("")
-
     const router = useRouter()
     const { toast } = useToast()
 
+    const [formData, setFormData] = useState<AssessmentConfig>({
+        name: '',
+        subject: '',
+        target_grade: 5,
+        difficulty_level: 'medium',
+        topic: '',
+        question_count: 10,
+        time_limit_minutes: 30
+    })
+
+    const [isCreating, setIsCreating] = useState(false)
+    const [isGenerating, setIsGenerating] = useState(false)
+    const [configId, setConfigId] = useState<string | null>(null)
+    const [generatedAssessment, setGeneratedAssessment] = useState<GeneratedAssessment | null>(null)
+    const [showPreview, setShowPreview] = useState(false)
+    const [autoGenerate, setAutoGenerate] = useState(true) // Auto-generate after config creation
+
     const subjects = [
-        "Mathematics", "Science", "English", "History", "Geography",
-        "Physics", "Chemistry", "Biology", "Literature", "Art"
+        'Mathematics',
+        'Science',
+        'English Language Arts',
+        'Social Studies',
+        'History',
+        'Geography',
+        'Physics',
+        'Chemistry',
+        'Biology'
     ]
 
-    const addTopic = () => {
-        if (newTopic && !assessment.topics.includes(newTopic)) {
-            setAssessment(prev => ({
-                ...prev,
-                topics: [...prev.topics, newTopic]
-            }))
-            setNewTopic("")
-        }
-    }
+    const grades = Array.from({ length: 8 }, (_, i) => i + 5) // Grades 5-12
 
-    const removeTopic = (topic: string) => {
-        setAssessment(prev => ({
+    const handleInputChange = (field: keyof AssessmentConfig, value: any) => {
+        setFormData(prev => ({
             ...prev,
-            topics: prev.topics.filter(t => t !== topic)
+            [field]: value
         }))
     }
 
-    const addQuestion = () => {
-        if (currentQuestion.question_text && currentQuestion.options.every(opt => opt.trim())) {
-            setQuestions(prev => [...prev, { ...currentQuestion }])
-            setCurrentQuestion({
-                question_text: "",
-                options: ["", "", "", ""],
-                correct_answer: 0,
-                topic: "",
-                difficulty: "medium",
-            })
+    // Shared function to generate assessment from config ID
+    const generateAssessment = async (targetConfigId: string) => {
+        if (!targetConfigId) {
             toast({
-                title: "Question Added",
-                description: "Question has been added to the assessment",
-            })
-        } else {
-            toast({
-                title: "Incomplete Question",
-                description: "Please fill in all question fields",
-                variant: "destructive",
-            })
-        }
-    }
-
-    const removeQuestion = (index: number) => {
-        setQuestions(prev => prev.filter((_, i) => i !== index))
-    }
-
-    const updateQuestionOption = (index: number, value: string) => {
-        setCurrentQuestion(prev => ({
-            ...prev,
-            options: prev.options.map((opt, i) => i === index ? value : opt)
-        }))
-    }
-
-    const handleSubmit = async () => {
-        if (!assessment.title || !assessment.subject || questions.length === 0) {
-            toast({
-                title: "Incomplete Assessment",
-                description: "Please fill in all required fields and add at least one question",
-                variant: "destructive",
+                title: "No Configuration",
+                description: "Please create a configuration first",
+                variant: "destructive"
             })
             return
         }
 
-        setLoading(true)
+        setIsGenerating(true)
         try {
-            const assessmentData = {
-                ...assessment,
-                questions,
+            console.log('Generating assessment with config ID:', targetConfigId)
+            const response = await apiService.generateAssessmentFromConfig(targetConfigId) as any
+            console.log('Generate assessment response:', response)
+
+            // Handle different response formats
+            let assessmentData = null
+            if (response.success && response.data) {
+                assessmentData = response.data
+            } else if (response.questions) {
+                assessmentData = response
+            } else if (response.data) {
+                assessmentData = response.data
             }
 
-            const result = await apiService.createAssessment(assessmentData)
-
-            toast({
-                title: "Assessment Created",
-                description: `Assessment "${assessment.title}" has been created successfully`,
-            })
-
-            router.push("/dashboard/assessments")
-
+            if (assessmentData) {
+                console.log('Assessment data received:', assessmentData)
+                console.log('Questions array:', assessmentData.questions)
+                setGeneratedAssessment(assessmentData)
+                setShowPreview(true)
+                toast({
+                    title: "Assessment Generated",
+                    description: `Successfully generated ${assessmentData.questions?.length || formData.question_count} questions`
+                })
+            } else {
+                throw new Error(response.message || response.error || 'Failed to generate assessment - no questions returned')
+            }
         } catch (error: any) {
-            console.error('Assessment creation error:', error)
             toast({
-                title: "Creation Failed",
+                title: "Error Generating Assessment",
                 description: handleApiError(error),
-                variant: "destructive",
+                variant: "destructive"
             })
         } finally {
-            setLoading(false)
+            setIsGenerating(false)
         }
+    }
+
+    const handleCreateConfig = async () => {
+        if (!formData.name || !formData.subject || !formData.topic) {
+            toast({
+                title: "Missing Information",
+                description: "Please fill in all required fields",
+                variant: "destructive"
+            })
+            return
+        }
+
+        setIsCreating(true)
+        try {
+            const response = await apiService.createAssessmentConfig(formData) as any
+            console.log('Config creation response:', response)
+
+            // Handle different response formats
+            let configId = null
+            if (response.success && response.data?.config_id) {
+                configId = response.data.config_id
+            } else if (response.config_id) {
+                configId = response.config_id
+            } else if (response.data?.id) {
+                configId = response.data.id
+            } else if (response.id) {
+                configId = response.id
+            }
+
+            if (configId) {
+                setConfigId(configId)
+                toast({
+                    title: "Configuration Created",
+                    description: "Assessment configuration saved successfully"
+                })
+
+                // Auto-generate assessment if enabled
+                if (autoGenerate) {
+                    setTimeout(async () => {
+                        await generateAssessment(configId)
+                    }, 500) // Small delay to allow UI to update
+                }
+            } else {
+                throw new Error(response.message || response.error || 'Failed to create configuration - no config ID returned')
+            }
+        } catch (error: any) {
+            toast({
+                title: "Error Creating Configuration",
+                description: handleApiError(error),
+                variant: "destructive"
+            })
+        } finally {
+            setIsCreating(false)
+        }
+    }
+
+    const handleGenerateAssessment = async () => {
+        await generateAssessment(configId!)
+    }
+
+    const handleSaveAssessment = async () => {
+        if (!generatedAssessment) return
+
+        try {
+            toast({
+                title: "Assessment Saved",
+                description: "Assessment has been saved successfully"
+            })
+
+            // Navigate to assessments list
+            router.push('/dashboard/assessments')
+        } catch (error: any) {
+            toast({
+                title: "Error Saving Assessment",
+                description: handleApiError(error),
+                variant: "destructive"
+            })
+        }
+    }
+
+    if (showPreview && generatedAssessment) {
+        return (
+            <div className="space-y-6">
+                {/* Header */}
+                <div className="flex items-center gap-4">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowPreview(false)}
+                    >
+                        <ArrowLeft className="w-4 h-4 mr-2" />
+                        Back to Form
+                    </Button>
+                    <div>
+                        <h1 className="text-2xl font-bold">Assessment Preview</h1>
+                        <p className="text-muted-foreground">
+                            Review the AI-generated assessment before saving
+                        </p>
+                    </div>
+                </div>
+
+                {/* Preview Content */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>{formData.name}</CardTitle>
+                        <CardDescription>
+                            {formData.subject} • Grade {formData.target_grade} • {formData.difficulty_level} difficulty
+                        </CardDescription>
+                        <div className="flex gap-4 text-sm text-muted-foreground">
+                            <span>{generatedAssessment.questions.length} questions</span>
+                            <span>{formData.time_limit_minutes} minutes</span>
+                            <span>Topic: {formData.topic}</span>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-6">
+                            {generatedAssessment.questions.map((question, index) => {
+                                // Debug: log the question structure
+                                console.log(`Question ${index + 1}:`, question)
+
+                                // Try multiple possible field names for the question text
+                                const questionText = question.question ||
+                                    question.question_text ||
+                                    question.text ||
+                                    question.prompt ||
+                                    `Question ${index + 1} (text not found)`
+
+                                return (
+                                    <div key={index} className="border rounded-lg p-4">
+                                        <div className="flex items-start gap-3">
+                                            <span className="flex-shrink-0 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
+                                                {index + 1}
+                                            </span>
+                                            <div className="flex-1 space-y-3">
+                                                <p className="font-medium">{questionText}</p>
+
+                                                {question.options && (
+                                                    <div className="space-y-2">
+                                                        <p className="text-sm font-medium text-muted-foreground">Options:</p>
+                                                        {question.options.map((option, optIndex) => (
+                                                            <div key={optIndex} className="flex items-center gap-2">
+                                                                <div className="w-4 h-4 border rounded-full flex-shrink-0" />
+                                                                <span className={
+                                                                    option === question.correct_answer
+                                                                        ? "text-green-600 font-medium"
+                                                                        : ""
+                                                                }>
+                                                                    {option}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {question.correct_answer && (
+                                                    <div className="text-sm">
+                                                        <span className="font-medium text-green-600">Correct Answer: </span>
+                                                        <span className="text-green-600">{question.correct_answer}</span>
+                                                    </div>
+                                                )}
+
+                                                {question.explanation && (
+                                                    <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
+                                                        <strong>Explanation:</strong> {question.explanation}
+                                                    </div>
+                                                )}
+
+                                                {/* Debug info - remove in production */}
+                                                <details className="text-xs text-muted-foreground">
+                                                    <summary>Debug Info</summary>
+                                                    <pre>{JSON.stringify(question, null, 2)}</pre>
+                                                </details>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <Button onClick={handleSaveAssessment} className="flex-1">
+                                <Save className="w-4 h-4 mr-2" />
+                                Save Assessment
+                            </Button>
+                            <Button variant="outline" onClick={() => setShowPreview(false)}>
+                                Edit Configuration
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        )
     }
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center space-x-3">
-                <BookOpen className="h-8 w-8 text-blue-600" />
+            {/* Header */}
+            <div className="flex items-center gap-4">
+                <Link href="/dashboard/assessments">
+                    <Button variant="ghost" size="sm">
+                        <ArrowLeft className="w-4 h-4 mr-2" />
+                        Back to Assessments
+                    </Button>
+                </Link>
                 <div>
-                    <h1 className="text-3xl font-bold">Create Assessment</h1>
-                    <p className="text-gray-600">Build a comprehensive assessment for your students</p>
+                    <h1 className="text-2xl font-bold">Create Assessment</h1>
+                    <p className="text-muted-foreground">
+                        Configure your assessment parameters and let AI generate the questions
+                    </p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Assessment Details */}
-                <div className="lg:col-span-2 space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Assessment Information</CardTitle>
-                            <CardDescription>Basic details about the assessment</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div>
-                                <Label htmlFor="title">Assessment Title</Label>
-                                <Input
-                                    id="title"
-                                    value={assessment.title}
-                                    onChange={(e) => setAssessment(prev => ({ ...prev, title: e.target.value }))}
-                                    placeholder="e.g., Grade 5 Math Assessment"
-                                />
-                            </div>
+            {/* Configuration Form */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Assessment Configuration</CardTitle>
+                    <CardDescription>
+                        Set up the basic parameters for your assessment. AI will generate questions based on these settings.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    {/* Basic Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="name">Assessment Name *</Label>
+                            <Input
+                                id="name"
+                                value={formData.name}
+                                onChange={(e) => handleInputChange('name', e.target.value)}
+                                placeholder="e.g., Grade 5 Math Quiz"
+                            />
+                        </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label htmlFor="subject">Subject</Label>
-                                    <Select value={assessment.subject} onValueChange={(value) =>
-                                        setAssessment(prev => ({ ...prev, subject: value }))
-                                    }>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select subject" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {subjects.map(subject => (
-                                                <SelectItem key={subject} value={subject}>{subject}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div>
-                                    <Label htmlFor="grade">Grade Level</Label>
-                                    <Select value={assessment.grade.toString()} onValueChange={(value) =>
-                                        setAssessment(prev => ({ ...prev, grade: parseInt(value) }))
-                                    }>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select grade" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(grade => (
-                                                <SelectItem key={grade} value={grade.toString()}>Grade {grade}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <div>
-                                <Label htmlFor="duration">Estimated Duration (minutes)</Label>
-                                <Input
-                                    id="duration"
-                                    type="number"
-                                    value={assessment.estimated_duration_minutes}
-                                    onChange={(e) => setAssessment(prev => ({
-                                        ...prev,
-                                        estimated_duration_minutes: parseInt(e.target.value) || 30
-                                    }))}
-                                    min="5"
-                                    max="180"
-                                />
-                            </div>
-
-                            <div>
-                                <Label>Topics</Label>
-                                <div className="flex space-x-2 mb-2">
-                                    <Input
-                                        value={newTopic}
-                                        onChange={(e) => setNewTopic(e.target.value)}
-                                        placeholder="Add a topic"
-                                        onKeyPress={(e) => e.key === 'Enter' && addTopic()}
-                                    />
-                                    <Button onClick={addTopic} variant="outline">Add</Button>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {assessment.topics.map(topic => (
-                                        <Badge key={topic} variant="secondary" className="cursor-pointer"
-                                            onClick={() => removeTopic(topic)}>
-                                            {topic} <Trash2 className="h-3 w-3 ml-1" />
-                                        </Badge>
+                        <div className="space-y-2">
+                            <Label htmlFor="subject">Subject *</Label>
+                            <Select
+                                value={formData.subject}
+                                onValueChange={(value) => handleInputChange('subject', value)}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a subject" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {subjects.map((subject) => (
+                                        <SelectItem key={subject} value={subject}>
+                                            {subject}
+                                        </SelectItem>
                                     ))}
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
 
-                    {/* Add Question */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Add Question</CardTitle>
-                            <CardDescription>Create multiple choice questions for the assessment</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div>
-                                <Label htmlFor="question">Question Text</Label>
-                                <Textarea
-                                    id="question"
-                                    value={currentQuestion.question_text}
-                                    onChange={(e) => setCurrentQuestion(prev => ({
-                                        ...prev,
-                                        question_text: e.target.value
-                                    }))}
-                                    placeholder="Enter your question here..."
-                                    rows={3}
-                                />
-                            </div>
-
-                            <div>
-                                <Label>Answer Options</Label>
-                                <div className="space-y-2">
-                                    {currentQuestion.options.map((option, index) => (
-                                        <div key={index} className="flex items-center space-x-2">
-                                            <Input
-                                                value={option}
-                                                onChange={(e) => updateQuestionOption(index, e.target.value)}
-                                                placeholder={`Option ${index + 1}`}
-                                                className={currentQuestion.correct_answer === index ?
-                                                    "border-green-500 bg-green-50" : ""}
-                                            />
-                                            <Button
-                                                variant={currentQuestion.correct_answer === index ? "default" : "outline"}
-                                                size="sm"
-                                                onClick={() => setCurrentQuestion(prev => ({
-                                                    ...prev,
-                                                    correct_answer: index
-                                                }))}
-                                            >
-                                                {currentQuestion.correct_answer === index ? "Correct" : "Mark Correct"}
-                                            </Button>
-                                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="grade">Target Grade *</Label>
+                            <Select
+                                value={formData.target_grade.toString()}
+                                onValueChange={(value) => handleInputChange('target_grade', parseInt(value))}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {grades.map((grade) => (
+                                        <SelectItem key={grade} value={grade.toString()}>
+                                            Grade {grade}
+                                        </SelectItem>
                                     ))}
-                                </div>
-                            </div>
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label htmlFor="questionTopic">Topic</Label>
-                                    <Select value={currentQuestion.topic} onValueChange={(value) =>
-                                        setCurrentQuestion(prev => ({ ...prev, topic: value }))
-                                    }>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select topic" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {assessment.topics.map(topic => (
-                                                <SelectItem key={topic} value={topic}>{topic}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="difficulty">Difficulty Level</Label>
+                            <Select
+                                value={formData.difficulty_level}
+                                onValueChange={(value: 'easy' | 'medium' | 'hard') => handleInputChange('difficulty_level', value)}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="easy">Easy</SelectItem>
+                                    <SelectItem value="medium">Medium</SelectItem>
+                                    <SelectItem value="hard">Hard</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                                <div>
-                                    <Label htmlFor="difficulty">Difficulty</Label>
-                                    <Select value={currentQuestion.difficulty} onValueChange={(value: any) =>
-                                        setCurrentQuestion(prev => ({ ...prev, difficulty: value }))
-                                    }>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select difficulty" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="easy">Easy</SelectItem>
-                                            <SelectItem value="medium">Medium</SelectItem>
-                                            <SelectItem value="hard">Hard</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="question_count">Number of Questions</Label>
+                            <Input
+                                id="question_count"
+                                type="number"
+                                value={formData.question_count}
+                                onChange={(e) => handleInputChange('question_count', parseInt(e.target.value) || 10)}
+                                min="5"
+                                max="50"
+                            />
+                        </div>
+                    </div>
 
-                            <Button onClick={addQuestion} className="w-full">
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add Question
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="topic">Topic/Chapter *</Label>
+                            <Input
+                                id="topic"
+                                value={formData.topic}
+                                onChange={(e) => handleInputChange('topic', e.target.value)}
+                                placeholder="e.g., Fractions and Decimals"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="time_limit">Time Limit (minutes)</Label>
+                            <Input
+                                id="time_limit"
+                                type="number"
+                                value={formData.time_limit_minutes}
+                                onChange={(e) => handleInputChange('time_limit_minutes', parseInt(e.target.value) || 30)}
+                                min="10"
+                                max="180"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Auto-generation Option */}
+                    <div className="flex items-center space-x-2 pt-2">
+                        <input
+                            type="checkbox"
+                            id="auto_generate"
+                            checked={autoGenerate}
+                            onChange={(e) => setAutoGenerate(e.target.checked)}
+                            className="rounded border-gray-300"
+                        />
+                        <Label htmlFor="auto_generate" className="text-sm">
+                            Automatically generate questions after creating configuration
+                        </Label>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 pt-4">
+                        {!configId ? (
+                            <Button
+                                onClick={handleCreateConfig}
+                                disabled={isCreating}
+                                className="flex-1"
+                            >
+                                {isCreating ? "Creating..." : "Create Configuration"}
                             </Button>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {/* Assessment Summary */}
-                <div className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center space-x-2">
-                                <Users className="h-5 w-5" />
-                                <span>Assessment Summary</span>
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Questions:</span>
-                                <span className="font-medium">{questions.length}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Duration:</span>
-                                <span className="font-medium flex items-center">
-                                    <Clock className="h-4 w-4 mr-1" />
-                                    {assessment.estimated_duration_minutes} min
-                                </span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-sm text-gray-600">Topics:</span>
-                                <span className="font-medium">{assessment.topics.length}</span>
-                            </div>
-                            <div className="pt-4">
+                        ) : (
+                            <>
                                 <Button
-                                    onClick={handleSubmit}
-                                    className="w-full"
-                                    disabled={loading || questions.length === 0}
+                                    onClick={handleGenerateAssessment}
+                                    disabled={isGenerating}
+                                    className="flex-1"
                                 >
-                                    {loading ? "Creating..." : "Create Assessment"}
+                                    <Wand2 className="w-4 h-4 mr-2" />
+                                    {isGenerating ? "Generating Questions..." : "Generate AI Questions"}
                                 </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setConfigId(null)}
+                                >
+                                    Edit Configuration
+                                </Button>
+                            </>
+                        )}
+                    </div>
 
-                    {/* Questions List */}
-                    {questions.length > 0 && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Questions ({questions.length})</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-3 max-h-96 overflow-y-auto">
-                                    {questions.map((question, index) => (
-                                        <div key={index} className="p-3 border rounded-lg">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <span className="text-sm font-medium">Q{index + 1}</span>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => removeQuestion(index)}
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                            <p className="text-sm text-gray-700 mb-2">{question.question_text}</p>
-                                            <div className="flex justify-between text-xs text-gray-500">
-                                                <span>{question.topic}</span>
-                                                <span className="capitalize">{question.difficulty}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </CardContent>
-                        </Card>
+                    {configId && (
+                        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                            <p className="text-sm text-green-700 dark:text-green-300">
+                                ✓ Configuration created successfully (ID: {configId}).
+                                {autoGenerate ? ' Questions are being generated automatically...' : ' Click "Generate AI Questions" to create your assessment.'}
+                            </p>
+                        </div>
                     )}
-                </div>
-            </div>
+                </CardContent>
+            </Card>
         </div>
     )
 }

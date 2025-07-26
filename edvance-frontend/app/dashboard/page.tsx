@@ -164,12 +164,12 @@ export default function DashboardPage() {
           </Card>
         </Link>
 
-        <Link href="/dashboard/learning-paths">
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer border-dashed border-2 border-purple-300 bg-purple-50">
+        <Link href="/dashboard/documents/upload">
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer border-dashed border-2 border-orange-300 bg-orange-50">
             <CardContent className="p-6 text-center">
-              <Target className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-              <h3 className="font-semibold text-purple-800">Generate Path</h3>
-              <p className="text-sm text-purple-600">AI personalized learning</p>
+              <BookOpen className="h-8 w-8 text-orange-600 mx-auto mb-2" />
+              <h3 className="font-semibold text-orange-800">Docs Upload</h3>
+              <p className="text-sm text-orange-600">Upload learning materials</p>
             </CardContent>
           </Card>
         </Link>

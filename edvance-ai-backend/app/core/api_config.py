@@ -48,6 +48,10 @@ class APIConfig:
             "/v1/learning/teacher/learning-analytics", 
             "/v1/learning/student/{student_id}/learning-insights",
             
+            # Document Upload
+            "/v1/documents/upload",
+            "/v1/documents/list",
+            
             # Health
             "/",
             "/health"
@@ -71,8 +75,6 @@ class APIConfig:
         return {
             "/v1/agent/invoke",
             "/v1/agent/health",
-            "/v1/documents/upload",
-            "/v1/documents/list",
             "/v1/assessments/configs",
             "/v1/assessments/rag/documents/upload",
             "/debug/trace/{event_id}",
