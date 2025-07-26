@@ -160,6 +160,7 @@ async def get_document_details(
 async def generate_rag_assessment(
     config_id: str = Path(..., description="Assessment configuration ID"),
     force_rag: bool = Query(True, description="Force RAG generation even with limited context"),
+    lang: str = Query(default="english", description="Language for AI generation (english, tamil, telugu)"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Assessment:
     """
@@ -186,7 +187,8 @@ async def generate_rag_assessment(
         # Generate RAG-enhanced assessment
         assessment = await enhanced_assessment_service.create_rag_assessment(
             config=config,
-            force_rag=force_rag
+            force_rag=force_rag,
+            language=lang
         )
         
         logger.info(f"Generated RAG assessment {assessment.assessment_id} from config {config_id}")

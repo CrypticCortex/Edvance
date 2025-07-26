@@ -18,6 +18,32 @@ from app.models.lesson_models import (
 )
 from app.models.learning_models import LearningStep, DifficultyLevel
 from app.services.enhanced_assessment_service import enhanced_assessment_service
+from app.core.language import SupportedLanguage, validate_language, create_language_prompt_prefix
+from pydantic import BaseModel, Field
+from typing import Literal
+
+# Structured output models for lesson generation
+class ContentElementStructured(BaseModel):
+    element_type: Literal["text", "image", "exercise"] = "text"
+    title: str
+    content: str
+    position: int = 1
+
+class SlideStructured(BaseModel):
+    slide_number: int
+    slide_type: Literal["introduction", "concept_explanation", "example", "practice", "assessment", "summary"] = "concept_explanation"
+    title: str
+    subtitle: Optional[str] = None
+    learning_objective: str
+    estimated_duration_minutes: int = 5
+    content_elements: List[ContentElementStructured]
+    is_interactive: bool = False
+
+class LessonStructured(BaseModel):
+    title: str
+    description: str
+    learning_objectives: List[str]
+    slides: List[SlideStructured]
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +96,8 @@ async def generate_lesson_content_ultra_fast(
         if not learning_step:
             return {"success": False, "error": "Learning step not found"}
         
-        # Basic student context - minimal data
-        student_context = {
-            "student_id": student_id,
-            "grade_level": 5,  # Default for speed
-            "learning_style": "mixed"
-        }
+        # Get real student context - optimized for speed but still real data
+        student_context = await _get_student_context(student_id, teacher_uid)
         
         gather_time = (datetime.utcnow() - start_time).total_seconds()
         logger.info(f"Minimal data gathering completed in {gather_time:.2f} seconds")
@@ -83,8 +105,8 @@ async def generate_lesson_content_ultra_fast(
         # Ultra-optimized AI generation with concise prompt
         generation_start = datetime.utcnow()
         
-        lesson_content = await _generate_lesson_ultra_fast(
-            learning_step, student_context
+        lesson_content = await _generate_complete_lesson_optimized(
+            learning_step, student_context, [], customizations
         )
         
         generation_time = (datetime.utcnow() - generation_start).total_seconds()
@@ -231,7 +253,7 @@ async def generate_lesson_content(
         Dict containing lesson generation results
     """
     # Use ultra-fast approach for production performance
-    return await _generate_lesson_ultra_fast(
+    return await generate_lesson_content_ultra_fast(
         learning_step_id, student_id, teacher_uid, customizations
     )
 
@@ -1016,21 +1038,82 @@ async def _get_learning_step(step_id: str) -> Optional[LearningStep]:
         return None
 
 async def _get_student_context(student_id: str, teacher_uid: str) -> Dict[str, Any]:
-    """Get student context for personalization."""
+    """Get student context for personalization from real-time database."""
     try:
-        # Get student performance history, preferences, etc.
-        # For now, return basic context
+        # Get student profile from database
+        student_doc = db.collection("students").document(student_id).get()
+        
+        if not student_doc.exists:
+            logger.warning(f"Student {student_id} not found, using minimal context")
+            return {
+                "student_id": student_id,
+                "grade_level": 5,  # Fallback only
+                "learning_style": "mixed"
+            }
+        
+        student_data = student_doc.to_dict()
+        
+        # Get recent assessment performance for areas of strength/support
+        recent_assessments = db.collection("assessment_results").where(
+            filter=firestore.FieldFilter("student_id", "==", student_id)
+        ).order_by("completed_at", direction=firestore.Query.DESCENDING).limit(5).get()
+        
+        # Analyze performance patterns
+        areas_of_strength = []
+        areas_needing_support = []
+        total_scores = []
+        
+        for assessment in recent_assessments:
+            assessment_data = assessment.to_dict()
+            score = assessment_data.get("score", 0)
+            total_scores.append(score)
+            
+            # Analyze subject performance
+            subject = assessment_data.get("subject", "")
+            if score >= 80:
+                if subject and subject not in areas_of_strength:
+                    areas_of_strength.append(subject)
+            elif score < 60:
+                if subject and subject not in areas_needing_support:
+                    areas_needing_support.append(subject)
+        
+        # Calculate performance level
+        avg_score = sum(total_scores) / len(total_scores) if total_scores else 70
+        if avg_score >= 85:
+            performance_level = "advanced"
+        elif avg_score >= 70:
+            performance_level = "proficient"
+        elif avg_score >= 60:
+            performance_level = "developing"
+        else:
+            performance_level = "needs_support"
+        
+        # Get learning preferences from student profile
+        learning_style = student_data.get("learning_preferences", {}).get("preferred_style", "mixed")
+        
+        return {
+            "student_id": student_id,
+            "grade_level": student_data.get("grade_level", 5),
+            "learning_style": learning_style,
+            "performance_level": performance_level,
+            "areas_of_strength": areas_of_strength[:3],  # Top 3
+            "areas_needing_support": areas_needing_support[:3],  # Top 3
+            "average_score": round(avg_score, 1),
+            "total_assessments": len(total_scores),
+            "preferred_language": student_data.get("preferred_language", "english"),
+            "special_needs": student_data.get("special_needs", []),
+            "interests": student_data.get("interests", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get student context: {str(e)}")
+        # Return minimal fallback context
         return {
             "student_id": student_id,
             "grade_level": 5,
-            "learning_style": "visual",
-            "performance_level": "average",
-            "areas_of_strength": ["basic_math"],
-            "areas_needing_support": ["word_problems"]
+            "learning_style": "mixed",
+            "performance_level": "average"
         }
-    except Exception as e:
-        logger.error(f"Failed to get student context: {str(e)}")
-        return {}
 
 async def _get_relevant_teacher_content(teacher_uid: str, topic: str, subject: str) -> List[str]:
     """Get relevant teacher content using RAG."""
@@ -1169,7 +1252,7 @@ Return JSON format:
                 learning_objective=slide_data["learning_objective"],
                 estimated_duration_minutes=slide_data.get("estimated_duration_minutes", 5),
                 is_interactive=slide_data.get("is_interactive", False),
-                completion_criteria=slide_data.get("completion_criteria", {})
+                completion_criteria=slide_data.get("completion_criteria") or {}
             )
             slides.append(slide)
         
@@ -1690,6 +1773,9 @@ async def _generate_complete_lesson_optimized(
     try:
         model = get_vertex_model("gemini-2.5-pro")
         
+        # Extract language from customizations
+        target_language = customizations.get("language", "english") if customizations else "english"
+        
         # Build comprehensive context for single AI generation
         context = f"""
 Learning Step: {learning_step.title}
@@ -1699,102 +1785,205 @@ Difficulty: {learning_step.difficulty_level}
 Objective: {learning_step.learning_objective}
 Duration: {learning_step.estimated_duration_minutes} minutes
 
+IMPORTANT: Generate ALL content in {target_language.upper()} language. This is critical - the entire lesson must be in {target_language}.
+
 Student Context:
 - Grade Level: {student_context.get('grade_level', 5)}
 - Learning Style: {student_context.get('learning_style', 'visual')}
 - Performance Level: {student_context.get('performance_level', 'average')}
 - Strengths: {student_context.get('areas_of_strength', [])}
 - Support Areas: {student_context.get('areas_needing_support', [])}
+- Target Language: {target_language}
 
 Teacher Resources: {teacher_content[:2] if teacher_content else 'None available'}
 
 Customizations: {json.dumps(customizations) if customizations else 'Standard approach'}
 """
 
+        # Create language-specific prompt prefix
+        language_instruction = ""
+        if target_language.lower() == "tamil":
+            language_instruction = "தமிழில் மட்டுமே உள்ளடக்கத்தை உருவாக்கவும். அனைத்து தலைப்புகள், விளக்கங்கள், உதாரணங்கள் தமிழில் இருக்க வேண்டும்."
+        elif target_language.lower() == "telugu":
+            language_instruction = "తెలుగులో మాత్రమే కంటెంట్‌ను రూపొందించండి. అన్ని శీర్షికలు, వివరణలు, ఉదాహరణలు తెలుగులో ఉండాలి."
+        else:
+            language_instruction = f"Generate ALL content in {target_language.upper()} language only."
+
+        # Use structured output with response schema for better consistency
+        response_schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "learning_objectives": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 5
+                },
+                "slides": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 6,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "slide_number": {"type": "integer", "minimum": 1},
+                            "slide_type": {
+                                "type": "string", 
+                                "enum": ["introduction", "concept_explanation", "example", "practice", "assessment", "summary"]
+                            },
+                            "title": {"type": "string"},
+                            "subtitle": {"type": "string"},
+                            "learning_objective": {"type": "string"},
+                            "estimated_duration_minutes": {"type": "integer", "minimum": 3, "maximum": 15},
+                            "content_elements": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 4,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "element_type": {"type": "string", "enum": ["text", "image", "exercise"]},
+                                        "title": {"type": "string"},
+                                        "content": {"type": "string"},
+                                        "position": {"type": "integer", "minimum": 1}
+                                    },
+                                    "required": ["element_type", "title", "content", "position"]
+                                }
+                            },
+                            "is_interactive": {"type": "boolean"}
+                        },
+                        "required": ["slide_number", "slide_type", "title", "learning_objective", "estimated_duration_minutes", "content_elements", "is_interactive"]
+                    }
+                }
+            },
+            "required": ["title", "description", "learning_objectives", "slides"]
+        }
+
         prompt = f"""Create a comprehensive, engaging lesson with detailed content for each slide. This is a single request to generate everything needed.
 
 {context}
 
+🚨 CRITICAL LANGUAGE REQUIREMENT 🚨
+{language_instruction}
+EVERY SINGLE TEXT ELEMENT must be in {target_language.upper()}. This includes:
+- Lesson title and description
+- All slide titles and subtitles
+- All content text
+- Learning objectives
+- Examples and explanations
+- Questions and activities
+
 Generate a complete lesson with 4-6 slides that includes:
-1. Introduction slide with clear learning objectives
-2. Concept explanation slides with examples and visual descriptions
-3. Interactive practice elements
-4. Assessment/understanding checks
-5. Summary with key takeaways
+1. Introduction slide (slide_type: "introduction") with clear learning objectives
+2. Concept explanation slides (slide_type: "concept_explanation") with examples and visual descriptions  
+3. Practice elements (slide_type: "practice") - text-based activities only
+4. Assessment/understanding checks (slide_type: "assessment") - text-based questions only
+5. Summary with key takeaways (slide_type: "summary")
 
-Make each slide rich with content, examples, and activities. Include specific interactive elements where beneficial.
+CRITICAL: Use ONLY these exact slide_type values:
+- "introduction"
+- "concept_explanation" 
+- "example"
+- "practice"
+- "assessment"
+- "summary"
 
-Return comprehensive JSON format:
+Make each slide rich with content, examples, and activities. Use only text-based elements.
+
+IMPORTANT: Respond with valid JSON only. No additional text or formatting.
+
+Example structure (generate content in the specified language):
 {{
-  "title": "Engaging lesson title",
-  "description": "What this lesson covers and why it matters",
-  "learning_objectives": ["clear objective 1", "clear objective 2", "clear objective 3"],
+  "title": "Engaging lesson title in {target_language}",
+  "description": "What this lesson covers and why it matters in {target_language}",
+  "learning_objectives": ["clear objective 1 in {target_language}", "clear objective 2 in {target_language}"],
   "slides": [
     {{
       "slide_number": 1,
-      "slide_type": "introduction|concept_explanation|example|practice|assessment|summary",
-      "title": "Compelling slide title",
-      "subtitle": "Helpful subtitle",
-      "learning_objective": "Specific objective for this slide",
+      "slide_type": "introduction",
+      "title": "Compelling slide title in {target_language}",
+      "subtitle": "Helpful subtitle in {target_language}",
+      "learning_objective": "Specific objective for this slide in {target_language}",
       "estimated_duration_minutes": 5,
       "content_elements": [
         {{
-          "element_type": "text|image|interactive_widget|exercise",
-          "title": "Element title",
-          "content": "Rich, detailed content with examples",
-          "position": 1,
-          "styling": {{"emphasis": true, "visual_cues": ["highlight_key_terms"]}},
-          "interactive_widget": {{
-            "widget_type": "multiple_choice|drag_drop|fill_blank|matching",
-            "title": "Interactive activity title",
-            "instructions": "Clear student instructions",
-            "content": {{
-              "question": "Engaging question",
-              "options": ["option1", "option2", "option3", "option4"],
-              "correct_answer": 0,
-              "explanation": "Why this is correct"
-            }},
-            "hints": ["helpful hint 1", "helpful hint 2"],
-            "points": 2,
-            "feedback": {{
-              "correct": "Excellent! You understood...",
-              "incorrect": "Not quite. Remember that..."
-            }}
-          }}
+          "element_type": "text",
+          "title": "Element title in {target_language}",
+          "content": "Rich, detailed content with examples in {target_language}",
+          "position": 1
         }}
       ],
-      "is_interactive": true,
-      "completion_criteria": {{
-        "required_interactions": 1,
-        "minimum_score": 70
-      }},
-      "visual_elements": [
+      "is_interactive": false
+    }},
+    {{
+      "slide_number": 2,
+      "slide_type": "concept_explanation",
+      "title": "Main concepts in {target_language}",
+      "learning_objective": "Understand key concepts in {target_language}",
+      "estimated_duration_minutes": 8,
+      "content_elements": [
         {{
-          "type": "diagram|illustration|chart",
-          "description": "Detailed description of visual element",
-          "purpose": "Why this visual helps learning"
+          "element_type": "text",
+          "title": "Key Concepts in {target_language}",
+          "content": "Detailed explanation in {target_language}",
+          "position": 1
         }}
-      ]
+      ],
+      "is_interactive": false
     }}
-  ],
-  "assessment_strategy": {{
-    "formative_checks": ["slide 2 quiz", "slide 4 activity"],
-    "summative_assessment": "final understanding check",
-    "success_criteria": "student can demonstrate..."
-  }},
-  "differentiation": {{
-    "for_struggling": ["additional hints", "simplified examples"],
-    "for_advanced": ["extension questions", "deeper analysis"],
-    "for_different_learning_styles": ["visual aids", "hands-on activities"]
-  }}
+  ]
 }}
+Generate comprehensive, engaging content in the specified language."""
 
-Make this lesson engaging, comprehensive, and ready to use immediately. Focus on quality over quantity - each element should be well-developed."""
-
-        response = await model.generate_content_async(prompt)
+        # Use structured output for better consistency and language compliance
+        try:
+            # Try structured output without response_schema first (more compatible)
+            generation_config = {
+                "response_mime_type": "application/json",
+                "temperature": 0.3,  # Lower temperature for more consistent output
+                "max_output_tokens": 4000
+            }
+            
+            response = await model.generate_content_async(
+                prompt,
+                generation_config=generation_config
+            )
+            logger.info("Successfully used JSON structured output for lesson generation")
+        except Exception as e:
+            logger.warning(f"Structured output failed, falling back to regular generation: {str(e)}")
+            response = await model.generate_content_async(
+                prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 4000
+                }
+            )
         
         # Parse the comprehensive response
         lesson_data = _parse_ai_response(response.text)
+        
+        # Validate and fix slide types to match enum values
+        if lesson_data.get("slides"):
+            for slide in lesson_data["slides"]:
+                slide_type = slide.get("slide_type", "concept_explanation")
+                # Map invalid slide types to valid ones
+                if slide_type not in ["introduction", "concept_explanation", "example", "practice", "assessment", "summary"]:
+                    if "practice" in slide_type.lower() and "assessment" in slide_type.lower():
+                        slide["slide_type"] = "assessment"
+                    elif "practice" in slide_type.lower():
+                        slide["slide_type"] = "practice"
+                    elif "assessment" in slide_type.lower():
+                        slide["slide_type"] = "assessment"
+                    elif "intro" in slide_type.lower():
+                        slide["slide_type"] = "introduction"
+                    elif "example" in slide_type.lower():
+                        slide["slide_type"] = "example"
+                    elif "summary" in slide_type.lower() or "conclusion" in slide_type.lower():
+                        slide["slide_type"] = "summary"
+                    else:
+                        slide["slide_type"] = "concept_explanation"
         
         # Ensure we have a valid lesson structure
         if not lesson_data.get("slides") or len(lesson_data.get("slides", [])) == 0:
@@ -1892,32 +2081,10 @@ Make this lesson engaging, comprehensive, and ready to use immediately. Focus on
                                 "position": 1
                             },
                             {
-                                "element_type": "interactive_widget",
+                                "element_type": "text",
                                 "title": "Quick Check",
-                                "content": "Test your understanding",
-                                "position": 2,
-                                "interactive_widget": {
-                                    "widget_type": "multiple_choice",
-                                    "title": f"{learning_step.topic} Understanding Check",
-                                    "instructions": "Choose the best answer",
-                                    "content": {
-                                        "question": f"Which of the following best describes {learning_step.topic}?",
-                                        "options": [
-                                            "A mathematical tool for problem solving",
-                                            "A way to understand relationships",
-                                            "An important concept in mathematics",
-                                            "All of the above"
-                                        ],
-                                        "correct_answer": 3,
-                                        "explanation": f"{learning_step.topic} encompasses all these aspects - it's a versatile mathematical concept."
-                                    },
-                                    "hints": ["Think about what makes this concept useful"],
-                                    "points": 2,
-                                    "feedback": {
-                                        "correct": "Excellent! You understand the broad applications of this concept.",
-                                        "incorrect": "Not quite. Consider how this concept can be used in different ways."
-                                    }
-                                }
+                                "content": f"Test your understanding: Which of the following best describes {learning_step.topic}? Think about how this concept can be used as a mathematical tool, a way to understand relationships, and an important concept in mathematics.",
+                                "position": 2
                             }
                         ],
                         "is_interactive": True
@@ -1937,26 +2104,10 @@ Make this lesson engaging, comprehensive, and ready to use immediately. Focus on
                                 "position": 1
                             },
                             {
-                                "element_type": "interactive_widget",
+                                "element_type": "text",
                                 "title": "Knowledge Check",
-                                "content": "Final assessment",
-                                "position": 2,
-                                "interactive_widget": {
-                                    "widget_type": "fill_blank",
-                                    "title": f"Complete the {learning_step.topic} Statement",
-                                    "instructions": "Fill in the blanks with the correct terms",
-                                    "content": {
-                                        "text": f"When working with {learning_step.topic}, it's important to remember that ____ helps us understand the relationship, and ____ helps us solve problems effectively.",
-                                        "blanks": ["careful analysis", "systematic approaches"],
-                                        "options": [
-                                            ["careful analysis", "systematic approaches"],
-                                            ["quick guessing", "random methods"],
-                                            ["memorization", "repetition"]
-                                        ]
-                                    },
-                                    "hints": ["Think about good mathematical practices"],
-                                    "points": 3
-                                }
+                                "content": f"Complete this statement: When working with {learning_step.topic}, it's important to remember that careful analysis helps us understand the relationship, and systematic approaches help us solve problems effectively. Think about good mathematical practices as you work through problems.",
+                                "position": 2
                             }
                         ],
                         "is_interactive": True
@@ -2011,34 +2162,43 @@ Make this lesson engaging, comprehensive, and ready to use immediately. Focus on
         for slide_data in lesson_data["slides"]:
             slide_id = str(uuid.uuid4())
             
-            # Convert content elements with interactive widgets
+            # Convert content elements (no interactive widgets to avoid validation errors)
             content_elements = []
             for elem_data in slide_data.get("content_elements", []):
-                # Handle interactive widgets
-                interactive_widget = None
-                if elem_data.get("interactive_widget"):
-                    widget_data = elem_data["interactive_widget"]
-                    interactive_widget = InteractiveWidget(
-                        widget_id=str(uuid.uuid4()),
-                        widget_type=widget_data.get("widget_type", "multiple_choice"),
-                        title=widget_data.get("title", "Interactive Activity"),
-                        instructions=widget_data.get("instructions", "Complete this activity"),
-                        content=widget_data.get("content", {}),
-                        correct_answer=widget_data.get("correct_answer"),
-                        hints=widget_data.get("hints", []),
-                        points=widget_data.get("points", 1),
-                        feedback=widget_data.get("feedback", {})
+                # Skip interactive widgets to avoid validation errors
+                if elem_data.get("element_type") == "interactive_widget":
+                    # Convert interactive widget to text element
+                    widget_data = elem_data.get("interactive_widget", {})
+                    widget_content = widget_data.get("content", {})
+                    
+                    # Create text-based version of the interactive content
+                    if isinstance(widget_content, dict):
+                        question = widget_content.get("question", "")
+                        options = widget_content.get("options", [])
+                        if question and options:
+                            text_content = f"{question}\n\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+                        else:
+                            text_content = elem_data.get("content", "Interactive activity")
+                    else:
+                        text_content = elem_data.get("content", "Interactive activity")
+                    
+                    element = ContentElement(
+                        element_id=str(uuid.uuid4()),
+                        element_type=ContentElementType("text"),
+                        title=elem_data.get("title", "Activity"),
+                        content=text_content,
+                        position=elem_data.get("position", 1),
+                        styling=elem_data.get("styling", {})
                     )
-                
-                element = ContentElement(
-                    element_id=str(uuid.uuid4()),
-                    element_type=ContentElementType(elem_data.get("element_type", "text")),
-                    title=elem_data.get("title", "Content"),
-                    content=elem_data.get("content") or "Content will be displayed here",  # Ensure content is never None
-                    position=elem_data.get("position", 1),
-                    styling=elem_data.get("styling", {}),
-                    interactive_widget=interactive_widget
-                )
+                else:
+                    element = ContentElement(
+                        element_id=str(uuid.uuid4()),
+                        element_type=ContentElementType(elem_data.get("element_type", "text")),
+                        title=elem_data.get("title", "Content"),
+                        content=elem_data.get("content") or "Content will be displayed here",
+                        position=elem_data.get("position", 1),
+                        styling=elem_data.get("styling", {})
+                    )
                 content_elements.append(element)
             
             slide = LessonSlide(
@@ -2051,7 +2211,7 @@ Make this lesson engaging, comprehensive, and ready to use immediately. Focus on
                 learning_objective=slide_data["learning_objective"],
                 estimated_duration_minutes=slide_data.get("estimated_duration_minutes", 5),
                 is_interactive=slide_data.get("is_interactive", False),
-                completion_criteria=slide_data.get("completion_criteria", {}),
+                completion_criteria=slide_data.get("completion_criteria") or {},
                 visual_elements=slide_data.get("visual_elements", [])
             )
             slides.append(slide)

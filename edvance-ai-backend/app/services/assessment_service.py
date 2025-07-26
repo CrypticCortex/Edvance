@@ -245,7 +245,8 @@ class AssessmentService:
     async def generate_assessment_from_config(
         self,
         config_id: str,
-        teacher_uid: str
+        teacher_uid: str,
+        language: str = "english"
     ) -> Assessment:
         """
         Generate a new assessment from a configuration.
@@ -271,7 +272,8 @@ class AssessmentService:
             # Generate assessment using AI agent
             assessment = await assessment_generation_agent.generate_assessment(
                 config=config,
-                teacher_uid=teacher_uid
+                teacher_uid=teacher_uid,
+                language=language
             )
             
             # Save assessment to database

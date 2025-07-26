@@ -27,6 +27,7 @@ from app.models.rag_models import (
 )
 from app.models.student import AssessmentQuestion
 from app.core.config import settings
+from app.core.language import SupportedLanguage, validate_language, create_language_prompt_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,8 @@ class QuestionGeneratorAgent:
                     topic=request.topic,
                     difficulty=request.difficulty_level,
                     count=remaining,
-                    context_chunks=request.context_chunks
+                    context_chunks=request.context_chunks,
+                    language=request.language
                 )
                 
                 all_questions.extend(batch_questions)
@@ -132,14 +134,15 @@ Context {i} (from {source}):
         topic: str,
         difficulty: str,
         count: int,
-        context_chunks: List[RAGResult]
+        context_chunks: List[RAGResult],
+        language: str = "english"
     ) -> List[EnhancedAssessmentQuestion]:
         """Generate a batch of questions."""
         
         try:
             # Create the prompt
             prompt = self._create_question_prompt(
-                context_text, subject, grade_level, topic, difficulty, count
+                context_text, subject, grade_level, topic, difficulty, count, language
             )
             
             # Get response from LLM
@@ -164,7 +167,8 @@ Context {i} (from {source}):
         grade_level: int,
         topic: str,
         difficulty: str,
-        count: int
+        count: int,
+        language: str = "english"
     ) -> str:
         """Create the prompt for question generation."""
         
@@ -180,7 +184,13 @@ Context {i} (from {source}):
             "hard": "Evaluate, Create"
         }
         
-        prompt = f"""You are an expert educational assessment designer. Create {count} high-quality multiple-choice questions based on the provided context.
+        # Validate and create language-aware prompt
+        validated_language = validate_language(language)
+        language_prefix = create_language_prompt_prefix(validated_language, "Educational assessment questions")
+        
+        prompt = f"""{language_prefix}
+
+You are an expert educational assessment designer. Create {count} high-quality multiple-choice questions based on the provided context.
 
 REQUIREMENTS:
 - Subject: {subject}
@@ -222,6 +232,7 @@ QUALITY STANDARDS:
 5. Include educational explanations
 6. Avoid trick questions or ambiguous wording
 7. Test important concepts, not trivial details
+8. ALL content must be in the specified language
 
 Generate {count} question(s) now:"""
 

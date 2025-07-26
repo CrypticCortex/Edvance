@@ -9,6 +9,7 @@ from datetime import datetime
 from app.core.vertex import get_vertex_model
 from app.services.vertex_rag_service import vertex_rag_service
 from app.models.student import AssessmentConfig, Assessment, AssessmentQuestion
+from app.core.language import SupportedLanguage, validate_language, create_language_prompt_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,8 @@ class AssessmentGenerationAgent:
     async def generate_assessment(
         self,
         config: AssessmentConfig,
-        teacher_uid: str
+        teacher_uid: str,
+        language: str = "english"
     ) -> Assessment:
         """
         Generate a complete MCQ assessment based on configuration.
@@ -34,7 +36,9 @@ class AssessmentGenerationAgent:
             Assessment object with generated questions
         """
         try:
-            logger.info(f"Generating assessment for config {config.config_id}")
+            # Validate and normalize language
+            validated_language = validate_language(language)
+            logger.info(f"Generating assessment for config {config.config_id} in {validated_language}")
             
             # Step 1: Retrieve relevant content from RAG
             relevant_content = await self._retrieve_relevant_content(
@@ -47,10 +51,10 @@ class AssessmentGenerationAgent:
             if not relevant_content:
                 logger.warning(f"No relevant content found for topic: {config.topic}")
                 # Generate questions without RAG content (using general knowledge)
-                questions = await self._generate_questions_without_rag(config)
+                questions = await self._generate_questions_without_rag(config, validated_language)
             else:
                 # Generate questions using RAG content
-                questions = await self._generate_questions_with_rag(config, relevant_content)
+                questions = await self._generate_questions_with_rag(config, relevant_content, validated_language)
             
             # Step 2: Create assessment object
             assessment_id = str(uuid.uuid4())
@@ -118,7 +122,8 @@ class AssessmentGenerationAgent:
     async def _generate_questions_with_rag(
         self,
         config: AssessmentConfig,
-        content: str
+        content: str,
+        language: SupportedLanguage
     ) -> List[AssessmentQuestion]:
         """Generate questions using RAG content."""
         
@@ -128,7 +133,12 @@ class AssessmentGenerationAgent:
             "hard": "synthesis and evaluation"
         }
         
-        prompt = f"""You are an expert educational assessment creator. Generate {config.question_count} multiple choice questions based on the provided educational content.
+        # Create language-aware prompt
+        language_prefix = create_language_prompt_prefix(language, "Educational assessment questions")
+        
+        prompt = f"""{language_prefix}
+
+You are an expert educational assessment creator. Generate {config.question_count} multiple choice questions based on the provided educational content.
 
 ASSESSMENT REQUIREMENTS:
 - Subject: {config.subject}
@@ -147,6 +157,7 @@ INSTRUCTIONS:
 4. Difficulty should be {config.difficulty_level} level
 5. Base questions on the provided educational content
 6. Include clear explanations for correct answers
+7. ALL content must be in the specified language
 
 OUTPUT FORMAT - Return ONLY a JSON array like this:
 [
@@ -187,15 +198,21 @@ Generate exactly {config.question_count} questions following this format."""
         except Exception as e:
             logger.error(f"Failed to generate questions with RAG: {e}")
             # Fallback to generating without RAG
-            return await self._generate_questions_without_rag(config)
+            return await self._generate_questions_without_rag(config, language)
     
     async def _generate_questions_without_rag(
         self,
-        config: AssessmentConfig
+        config: AssessmentConfig,
+        language: SupportedLanguage
     ) -> List[AssessmentQuestion]:
         """Generate questions without RAG content (fallback)."""
         
-        prompt = f"""You are an expert educational assessment creator. Generate {config.question_count} multiple choice questions for the given specifications.
+        # Create language-aware prompt
+        language_prefix = create_language_prompt_prefix(language, "Educational assessment questions")
+        
+        prompt = f"""{language_prefix}
+
+You are an expert educational assessment creator. Generate {config.question_count} multiple choice questions for the given specifications.
 
 ASSESSMENT REQUIREMENTS:
 - Subject: {config.subject}
@@ -210,6 +227,7 @@ INSTRUCTIONS:
 3. Questions should be suitable for grade {config.target_grade} students
 4. Difficulty should be {config.difficulty_level} level
 5. Cover different aspects of the topic
+6. ALL content must be in the specified language
 
 OUTPUT FORMAT - Return ONLY a JSON array:
 [

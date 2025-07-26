@@ -44,7 +44,8 @@ async def invoke_agent(
         
         response_text = await agent_service.invoke_agent(
             user_uid=user_uid,
-            prompt=request.prompt
+            prompt=request.prompt,
+            language=request.lang
         )
         
         return AgentResponse(

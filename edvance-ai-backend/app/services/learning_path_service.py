@@ -11,6 +11,7 @@ from app.models.learning_models import (
 )
 from app.core.firebase import db
 from app.core.vertex import get_vertex_model
+from app.core.language import SupportedLanguage, validate_language, create_language_prompt_prefix, get_language_name
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,8 @@ class LearningPathService:
         student_performances: List[StudentPerformance],
         target_subject: str,
         target_grade: int,
-        learning_goals: Optional[List[str]] = None
+        learning_goals: Optional[List[str]] = None,
+        language: str = "english"
     ) -> LearningPath:
         """Generate a personalized learning path based on assessment analysis."""
         
@@ -42,9 +44,13 @@ class LearningPathService:
                 student_id, knowledge_gaps, student_performances
             )
             
+            # Validate and normalize language
+            validated_language = validate_language(language)
+            logger.info(f"Generating learning path for student {student_id} in {target_subject} using {validated_language}")
+            
             # Generate learning steps using AI
             learning_steps = await self._generate_learning_steps_with_ai(
-                current_state, knowledge_gaps, target_subject, target_grade, learning_goals
+                current_state, knowledge_gaps, target_subject, target_grade, learning_goals, validated_language
             )
             
             # Create learning path
@@ -156,13 +162,19 @@ class LearningPathService:
         knowledge_gaps: List[KnowledgeGap],
         subject: str,
         grade: int,
-        learning_goals: Optional[List[str]]
+        learning_goals: Optional[List[str]],
+        language: SupportedLanguage
     ) -> List[LearningStep]:
         """Use AI to generate personalized learning steps."""
         
         try:
+            # Create language-aware prompt
+            language_prefix = create_language_prompt_prefix(language, "Personalized learning path generation")
+            
             # Prepare prompt for AI
-            prompt = f"""You are an expert educational path designer. Create a personalized learning sequence for a student based on their current state and knowledge gaps.
+            prompt = f"""{language_prefix}
+
+You are an expert educational path designer. Create a personalized learning sequence for a student based on their current state and knowledge gaps.
 
 STUDENT CURRENT STATE:
 - Grade Level: {grade}
@@ -179,6 +191,38 @@ LEARNING GOALS:
 {learning_goals or ['Improve understanding in identified weak areas', 'Build confidence in the subject']}
 
 Create a sequence of 8-12 learning steps that will systematically address the knowledge gaps and help the student achieve their learning goals. Each step should build on the previous ones.
+
+🚨 CRITICAL TECHNICAL FIELD REQUIREMENTS 🚨
+YOU MUST USE THESE EXACT ENGLISH VALUES - DO NOT TRANSLATE THESE FIELDS:
+
+difficulty_level: MUST be exactly one of these English words:
+- "beginner" (for basic/introductory content)
+- "easy" (for simple concepts)  
+- "medium" (for moderate difficulty)
+- "hard" (for challenging content)
+- "advanced" (for expert level)
+
+learning_objective: MUST be exactly one of these English words:
+- "remember" (for memorization/recall)
+- "understand" (for comprehension)
+- "apply" (for using knowledge)
+- "analyze" (for breaking down concepts)
+- "evaluate" (for making judgments)
+- "create" (for producing new content)
+
+content_type: MUST be exactly one of these English words:
+- "explanation" (for teaching concepts)
+- "practice" (for exercises)
+- "video" (for video content)
+- "reading" (for text materials)
+- "interactive" (for hands-on activities)
+
+⚠️ LANGUAGE REQUIREMENTS:
+- Generate ALL content (titles, descriptions, content_text) in {get_language_name(language)}
+- But keep the three technical fields above in English exactly as specified
+- Do NOT translate "beginner", "easy", "medium", "hard", "advanced"
+- Do NOT translate "remember", "understand", "apply", "analyze", "evaluate", "create"
+- Do NOT translate "explanation", "practice", "video", "reading", "interactive"
 
 Return your response in this JSON format:
 
@@ -205,31 +249,58 @@ Return your response in this JSON format:
 
 Generate the learning path now:"""
 
-            # Get AI response
-            response = self.model.generate_content(prompt)
-            ai_plan = self._parse_ai_learning_plan(response.text)
+            # Get AI response with enhanced logging
+            logger.info(f"🤖 Sending prompt to AI for learning path generation (language: {language})")
+            logger.debug(f"Prompt length: {len(prompt)} characters")
+            
+            try:
+                response = self.model.generate_content(prompt)
+                logger.info(f"✅ AI response received, length: {len(response.text)} characters")
+                logger.debug(f"AI response preview: {response.text[:200]}...")
+                
+                ai_plan = self._parse_ai_learning_plan(response.text)
+                logger.info(f"📋 Parsed AI plan with {len(ai_plan.get('learning_steps', []))} steps")
+                
+            except Exception as e:
+                logger.error(f"❌ AI generation failed: {str(e)}")
+                logger.error(f"Error type: {type(e).__name__}")
+                raise e
             
             # Convert AI response to LearningStep objects
             learning_steps = []
             
             for i, step_data in enumerate(ai_plan.get("learning_steps", [])):
-                step = LearningStep(
-                    step_id=str(uuid.uuid4()),
-                    step_number=i + 1,
-                    title=step_data.get("title", f"Learning Step {i + 1}"),
-                    description=step_data.get("description", ""),
-                    subject=subject,
-                    topic=step_data.get("topic", "General"),
-                    subtopic=step_data.get("subtopic"),
-                    difficulty_level=DifficultyLevel(step_data.get("difficulty_level", "medium")),
-                    learning_objective=LearningObjectiveType(step_data.get("learning_objective", "understand")),
-                    content_type=step_data.get("content_type", "explanation"),
-                    content_text=step_data.get("content_text", ""),
-                    estimated_duration_minutes=step_data.get("estimated_duration_minutes", 20),
-                    addresses_gaps=step_data.get("addresses_gaps", []),
-                    prerequisites=step_data.get("prerequisites", [])
-                )
-                learning_steps.append(step)
+                try:
+                    # Handle difficulty level with fallback mapping
+                    difficulty_raw = step_data.get("difficulty_level", "medium")
+                    difficulty_level = self._map_difficulty_level(difficulty_raw)
+                    
+                    # Handle learning objective with fallback mapping  
+                    objective_raw = step_data.get("learning_objective", "understand")
+                    learning_objective = self._map_learning_objective(objective_raw)
+                    
+                    step = LearningStep(
+                        step_id=str(uuid.uuid4()),
+                        step_number=i + 1,
+                        title=step_data.get("title", f"Learning Step {i + 1}"),
+                        description=step_data.get("description", ""),
+                        subject=subject,
+                        topic=step_data.get("topic", "General"),
+                        subtopic=step_data.get("subtopic"),
+                        difficulty_level=difficulty_level,
+                        learning_objective=learning_objective,
+                        content_type=step_data.get("content_type", "explanation"),
+                        content_text=step_data.get("content_text", ""),
+                        estimated_duration_minutes=step_data.get("estimated_duration_minutes", 20),
+                        addresses_gaps=step_data.get("addresses_gaps", []),
+                        prerequisites=step_data.get("prerequisites", [])
+                    )
+                    learning_steps.append(step)
+                    
+                except Exception as step_error:
+                    logger.warning(f"Failed to create step {i+1}: {str(step_error)}")
+                    # Continue with next step instead of failing completely
+                    continue
             
             # If AI generation fails, create basic steps
             if not learning_steps:
@@ -240,8 +311,11 @@ Generate the learning path now:"""
             return learning_steps
             
         except Exception as e:
-            logger.warning(f"AI step generation failed, using fallback: {str(e)}")
-            return await self._generate_fallback_learning_steps(knowledge_gaps, subject, grade)
+            logger.error(f"AI step generation failed, using fallback: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            fallback_steps = await self._generate_fallback_learning_steps(knowledge_gaps, subject, grade)
+            logger.info(f"Generated {len(fallback_steps)} fallback steps")
+            return fallback_steps
     
     async def _generate_fallback_learning_steps(
         self,
@@ -462,24 +536,123 @@ Generate the learning path now:"""
         return "\\n".join(formatted)
     
     def _parse_ai_learning_plan(self, response_text: str) -> Dict[str, Any]:
-        """Parse AI learning plan response."""
+        """Parse AI learning plan response with enhanced logging."""
         try:
             import json
+            
+            logger.debug(f"🔍 Parsing AI response, total length: {len(response_text)}")
             
             # Extract JSON from response
             start_idx = response_text.find('{')
             end_idx = response_text.rfind('}') + 1
             
-            if start_idx != -1 and end_idx != -1:
-                json_text = response_text[start_idx:end_idx]
-                return json.loads(json_text)
+            if start_idx == -1 or end_idx == -1:
+                logger.error(f"❌ No JSON found in AI response. Response preview: {response_text[:300]}...")
+                return {"learning_steps": []}
             
+            json_text = response_text[start_idx:end_idx]
+            logger.debug(f"📄 Extracted JSON length: {len(json_text)}")
+            logger.debug(f"JSON preview: {json_text[:200]}...")
+            
+            parsed_data = json.loads(json_text)
+            
+            # Validate structure
+            if "learning_steps" not in parsed_data:
+                logger.warning("⚠️ No 'learning_steps' key found in parsed JSON")
+                return {"learning_steps": []}
+            
+            steps_count = len(parsed_data.get("learning_steps", []))
+            logger.info(f"✅ Successfully parsed AI plan with {steps_count} learning steps")
+            
+            # Log first step for validation
+            if parsed_data.get("learning_steps"):
+                first_step = parsed_data["learning_steps"][0]
+                logger.debug(f"First step preview: {first_step.get('title', 'No title')}")
+            
+            return parsed_data
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON decode error: {str(e)}")
+            logger.error(f"Problematic JSON: {response_text[max(0, start_idx):min(len(response_text), end_idx)]}")
             return {"learning_steps": []}
-            
         except Exception as e:
-            logger.warning(f"Failed to parse AI learning plan: {str(e)}")
+            logger.error(f"❌ Unexpected error parsing AI learning plan: {str(e)}")
+            logger.error(f"Response type: {type(response_text)}, length: {len(response_text)}")
             return {"learning_steps": []}
     
+    def _map_difficulty_level(self, difficulty_raw: str) -> DifficultyLevel:
+        """Map AI-generated difficulty level to enum, with strict validation."""
+        try:
+            # First try direct mapping
+            return DifficultyLevel(difficulty_raw.lower())
+        except ValueError:
+            # Log when AI doesn't follow instructions
+            logger.warning(f"⚠️ AI generated non-English difficulty level: '{difficulty_raw}' - This should not happen with proper prompting!")
+            
+            # Emergency fallback mapping (this should rarely be used)
+            difficulty_mapping = {
+                # Tamil mappings (emergency fallback only)
+                "தொடக்க நிலை": "beginner",
+                "எளிய": "easy", 
+                "நடுத்தர": "medium",
+                "கடினமான": "hard",
+                "மேம்பட்ட": "advanced",
+                # Telugu mappings (emergency fallback only)
+                "ప్రారంభ స్థాయి": "beginner",
+                "సులభం": "easy",
+                "మధ్యస్థ": "medium", 
+                "కష్టం": "hard",
+                "అధునాతన": "advanced",
+                # Common variations
+                "basic": "beginner",
+                "simple": "easy",
+                "intermediate": "medium",
+                "difficult": "hard",
+                "expert": "advanced"
+            }
+            
+            mapped_value = difficulty_mapping.get(difficulty_raw.lower(), "medium")
+            logger.warning(f"🔧 Emergency mapping: '{difficulty_raw}' → '{mapped_value}'")
+            return DifficultyLevel(mapped_value)
+    
+    def _map_learning_objective(self, objective_raw: str) -> LearningObjectiveType:
+        """Map AI-generated learning objective to enum, with strict validation."""
+        try:
+            # First try direct mapping
+            return LearningObjectiveType(objective_raw.lower())
+        except ValueError:
+            # Log when AI doesn't follow instructions
+            logger.warning(f"⚠️ AI generated non-English learning objective: '{objective_raw}' - This should not happen with proper prompting!")
+            
+            # Emergency fallback mapping (this should rarely be used)
+            objective_mapping = {
+                # Tamil mappings (emergency fallback only)
+                "நினைவில் வைத்துக்கொள்": "remember",
+                "புரிந்துகொள்": "understand",
+                "பயன்படுத்து": "apply",
+                "பகுப்பாய்வு": "analyze",
+                "மதிப்பீடு": "evaluate",
+                "உருவாக்கு": "create",
+                # Telugu mappings (emergency fallback only)
+                "గుర్తుంచుకో": "remember",
+                "అర్థం చేసుకో": "understand",
+                "వర్తింపజేయి": "apply",
+                "విశ్లేషించు": "analyze",
+                "మూల్యాంకనం": "evaluate",
+                "సృష్టించు": "create",
+                # Common variations
+                "recall": "remember",
+                "comprehend": "understand",
+                "use": "apply",
+                "examine": "analyze",
+                "judge": "evaluate",
+                "design": "create"
+            }
+            
+            mapped_value = objective_mapping.get(objective_raw.lower(), "understand")
+            logger.warning(f"🔧 Emergency mapping: '{objective_raw}' → '{mapped_value}'")
+            return LearningObjectiveType(mapped_value)
+
     def _generate_default_learning_goals(self, gaps: List[KnowledgeGap]) -> List[str]:
         """Generate default learning goals based on knowledge gaps."""
         goals = []

@@ -28,7 +28,7 @@ google-genai
 python-multipart
 
 # Background task processing
-celery[redis]
+"celery[redis]"
 redis
 
 # File processing

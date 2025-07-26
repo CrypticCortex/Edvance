@@ -18,6 +18,7 @@ from app.agents.tools.lesson_tools import (
     start_lesson_chat,
     send_chat_message
 )
+from app.core.language import SupportedLanguage, validate_language
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ class LessonService:
         learning_step_id: str,
         student_id: str,
         teacher_uid: str,
-        customizations: Optional[Dict[str, Any]] = None
+        customizations: Optional[Dict[str, Any]] = None,
+        language: str = "english"
     ) -> Dict[str, Any]:
         """
         Create a new lesson from a learning step.
@@ -49,7 +51,14 @@ class LessonService:
             Dict containing lesson creation results
         """
         try:
-            logger.info(f"Creating lesson for step {learning_step_id}, student {student_id}")
+            # Validate and normalize language
+            validated_language = validate_language(language)
+            logger.info(f"Creating lesson for step {learning_step_id}, student {student_id} in {validated_language}")
+            
+            # Add language to customizations
+            if customizations is None:
+                customizations = {}
+            customizations["language"] = validated_language
             
             # Generate lesson content using the agent
             result = await generate_lesson_content(

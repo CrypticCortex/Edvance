@@ -61,6 +61,7 @@ class QuestionGenerationRequest(BaseModel):
     difficulty_level: str = Field(..., description="Difficulty: easy, medium, hard")
     question_count: int = Field(..., description="Number of questions to generate")
     question_type: str = Field("multiple_choice", description="Type of questions")
+    language: str = Field(default="english", description="Language for AI generation (english, tamil, telugu)")
 
 class GeneratedQuestionContext(BaseModel):
     """Additional context for a generated question."""

@@ -11,6 +11,7 @@ from app.services.simple_assessment_service import SimpleAssessmentService
 from app.models.student import AssessmentConfig, Assessment, AssessmentQuestion
 from app.models.rag_models import QuestionGenerationRequest
 from app.core.firebase import db
+from app.core.language import SupportedLanguage, validate_language
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,15 @@ class EnhancedAssessmentService:
     async def create_rag_assessment(
         self, 
         config: AssessmentConfig,
-        force_rag: bool = True
+        force_rag: bool = True,
+        language: str = "english"
     ) -> Assessment:
         """Create an assessment using RAG and AI generation."""
         
         try:
-            logger.info(f"Creating RAG assessment for config {config.config_id}")
+            # Validate and normalize language
+            validated_language = validate_language(language)
+            logger.info(f"Creating RAG assessment for config {config.config_id} in {validated_language}")
             
             # Step 1: Retrieve relevant context using RAG
             rag_results = await self.rag_service.retrieve_context_for_assessment(
@@ -50,7 +54,8 @@ class EnhancedAssessmentService:
                 topic=config.topic,
                 difficulty_level=config.difficulty_level,
                 question_count=config.question_count,
-                question_type="multiple_choice"
+                question_type="multiple_choice",
+                language=validated_language  # Add language parameter
             )
             
             # Use AI generation even without RAG context

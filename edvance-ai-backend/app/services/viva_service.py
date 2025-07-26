@@ -7,6 +7,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 from app.models.viva_models import VivaSession, VivaStatus, VivaMessage
 from app.core.vertex import get_vertex_model
+from app.core.language import SupportedLanguage, validate_language, create_language_prompt_prefix, get_language_name
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,10 @@ class VivaService:
 
     def _get_language_name(self, lang_code: str) -> str:
         """Get the full language name from a code."""
-        return {"english": "English", "telugu": "Telugu", "tamil": "Tamil"}.get(lang_code, "English")
+        validated_language = validate_language(lang_code)
+        return get_language_name(validated_language)
 
-    async def start_viva(self, student_id: str, learning_step_id: str, language: str) -> VivaSession:
+    async def start_viva(self, student_id: str, learning_step_id: str, language: str = "english") -> VivaSession:
         """Starts a new viva session."""
         session_id = str(uuid.uuid4())
         
@@ -43,10 +45,17 @@ class VivaService:
             learning_objective = "understand"
             content_text = ""
         
-        lang_name = self._get_language_name(language)
+        # Validate and normalize language
+        validated_language = validate_language(language)
+        lang_name = get_language_name(validated_language)
+        
+        # Create language-aware prompt
+        language_prefix = create_language_prompt_prefix(validated_language, "Viva voce examination")
 
         # Create a more detailed prompt using learning step information
-        initial_prompt = f"""You are a friendly and encouraging AI examiner conducting a viva voce (oral exam).
+        initial_prompt = f"""{language_prefix}
+
+You are a friendly and encouraging AI examiner conducting a viva voce (oral exam).
 
 LEARNING STEP DETAILS:
 - Title: {step_title}
@@ -57,7 +66,6 @@ LEARNING STEP DETAILS:
 - Content Focus: {content_text}
 
 VIVA INSTRUCTIONS:
-- Language: {lang_name}
 - Assess the student's understanding of the specific learning step content
 - Tailor questions to the {difficulty} difficulty level
 - Focus on the {learning_objective} learning objective
@@ -113,7 +121,13 @@ LEARNING STEP CONTEXT:
         else:
             step_context = f"Topic: {session.topic}"
         
-        prompt = f"""You are an AI examiner conducting a viva in {lang_name}.
+        # Create language-aware prompt
+        validated_language = validate_language(session.language)
+        language_prefix = create_language_prompt_prefix(validated_language, "Viva voce examination response")
+        
+        prompt = f"""{language_prefix}
+
+You are an AI examiner conducting a viva voce examination.
 
 {step_context}
 
@@ -171,7 +185,13 @@ EVALUATION CRITERIA:
         else:
             step_context = f"Topic: {session.topic}"
 
-        prompt = f"""You are an AI examiner. The viva in {lang_name} has concluded.
+        # Create language-aware prompt for evaluation
+        validated_language = validate_language(session.language)
+        language_prefix = create_language_prompt_prefix(validated_language, "Viva voce examination evaluation")
+        
+        prompt = f"""{language_prefix}
+
+You are an AI examiner. The viva voce examination has concluded.
 
 {step_context}
 

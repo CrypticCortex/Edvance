@@ -41,6 +41,7 @@ async def create_lesson_from_learning_step(
         learning_step_id = lesson_request.get("learning_step_id")
         student_id = lesson_request.get("student_id")
         customizations = lesson_request.get("customizations", {})
+        language = lesson_request.get("lang", "english")  # Extract language parameter
         
         if not learning_step_id or not student_id:
             raise HTTPException(
@@ -53,7 +54,8 @@ async def create_lesson_from_learning_step(
             learning_step_id=learning_step_id,
             student_id=student_id,
             teacher_uid=teacher_uid,
-            customizations=customizations
+            customizations=customizations,
+            language=language
         )
         
         if not result.get("success"):

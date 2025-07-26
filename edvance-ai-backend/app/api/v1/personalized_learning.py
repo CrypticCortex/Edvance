@@ -1,6 +1,6 @@
 # FILE: app/api/v1/personalized_learning.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from typing import Dict, Any, List, Optional
 import logging
 
@@ -123,6 +123,7 @@ async def process_batch_assessments(
 @router.post("/analyze-assessment", response_model=Dict[str, Any])
 async def analyze_student_assessment(
     assessment_data: Dict[str, Any] = Body(...),
+    lang: str = Query(default="english", description="Language for AI generation (english, tamil, telugu)"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
@@ -237,6 +238,7 @@ async def get_student_progress(
 @router.post("/generate-learning-path", response_model=Dict[str, Any])
 async def generate_learning_path(
     path_request: Dict[str, Any] = Body(...),
+    lang: str = Query(default="english", description="Language for AI generation (english, tamil, telugu)"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
@@ -278,7 +280,8 @@ async def generate_learning_path(
             student_performances=recent_performances,
             target_subject=target_subject,
             target_grade=target_grade,
-            learning_goals=learning_goals
+            learning_goals=learning_goals,
+            language=lang
         )
         
         logger.info(f"Generated learning path {learning_path.path_id} for student {student_id}")

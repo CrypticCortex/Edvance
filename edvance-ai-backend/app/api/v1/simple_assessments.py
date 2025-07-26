@@ -120,6 +120,7 @@ async def get_my_assessment_configs(
 @router.post("/configs/{config_id}/generate", response_model=Assessment, tags=["Assessment Generation"])
 async def generate_assessment_from_config(
     config_id: str = Path(..., description="Assessment configuration ID"),
+    lang: str = Query(default="english", description="Language for AI generation (english, tamil, telugu)"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Assessment:
     """
@@ -148,7 +149,7 @@ async def generate_assessment_from_config(
             )
         
         # Generate the assessment using RAG and AI
-        assessment = await enhanced_assessment_service.create_rag_assessment(config)
+        assessment = await enhanced_assessment_service.create_rag_assessment(config, language=lang)
         
         logger.info(f"Generated assessment {assessment.assessment_id} from config {config_id}")
         return assessment

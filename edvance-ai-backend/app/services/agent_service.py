@@ -11,6 +11,7 @@ from app.agents.orchestrator_agent.agent import root_agent as orchestrator_agent
 from app.agents.tools.profile_tools import current_user_uid
 from app.agents.tools.onboarding_tools import current_user_uid as onboarding_current_user_uid
 from app.agents.tools.onboarding_tools import current_user_uid as onboarding_current_user_uid
+from app.core.language import SupportedLanguage, validate_language, create_language_prompt_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class AgentService:
     def __init__(self):
         self.app_name = "comprehensive_teacher_agent"
     
-    async def invoke_agent(self, user_uid: str, prompt: str) -> str:
+    async def invoke_agent(self, user_uid: str, prompt: str, language: str = "english") -> str:
         """
         Invoke the comprehensive teacher agent with a user's prompt.
         This agent handles both onboarding for new users and profile management for existing users.
@@ -28,6 +29,7 @@ class AgentService:
         Args:
             user_uid: The authenticated user's UID
             prompt: The user's prompt text
+            language: Language for AI generation (english, tamil, telugu)
             
         Returns:
             The agent's response text
@@ -36,6 +38,9 @@ class AgentService:
             Exception: If agent invocation fails
         """
         try:
+            # Validate and normalize language
+            validated_language = validate_language(language)
+            
             # Set the user UID in context for all tools to use
             current_user_uid.set(user_uid)
             onboarding_current_user_uid.set(user_uid)
@@ -61,9 +66,13 @@ class AgentService:
                     session_id=session_id
                 )
             
-            # Create a Content object with the user's prompt
+            # Create language-aware prompt
+            language_prefix = create_language_prompt_prefix(validated_language, "Teacher assistance and guidance")
+            enhanced_prompt = f"{language_prefix}\n\nUser Request: {prompt}"
+            
+            # Create a Content object with the enhanced prompt
             user_message = types.Content(
-                parts=[types.Part(text=prompt)],
+                parts=[types.Part(text=enhanced_prompt)],
                 role="user"
             )
             

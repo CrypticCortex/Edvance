@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from app.core.language import SupportedLanguage, validate_language
 
 # ====================================================================
 # Authentication Models
@@ -45,6 +46,7 @@ class UserProfileUpdate(BaseModel): # <-- ADD THIS NEW MODEL
 class AgentPrompt(BaseModel):
     """Request model for agent invocation."""
     prompt: str = Field(..., description="The user's prompt to send to the agent", min_length=1)
+    lang: Optional[str] = Field(default="english", description="Language for AI generation (english, tamil, telugu)")
     
 class AgentResponse(BaseModel):
     """Response model for agent invocation."""
