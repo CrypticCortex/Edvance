@@ -443,6 +443,82 @@ class ApiService {
 
         return this.makeRequest(endpoint);
     }
+
+    // =================================================================
+    // STUDENT APIS
+    // =================================================================
+
+    // Upload students from CSV file
+    async uploadStudentsCSV(file: File): Promise<{
+        total_students: number;
+        students_created: number;
+        students_updated: number;
+        students_failed: number;
+        failed_students: any[];
+        created_student_ids: string[];
+        upload_summary: string;
+    }> {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const tokens = this.getAuthTokens();
+        const headers: Record<string, string> = {};
+
+        if (tokens?.idToken) {
+            headers['Authorization'] = `Bearer ${tokens.idToken}`;
+        }
+
+        const response = await fetch(`${this.baseUrl}/adk/v1/students/upload-csv`, {
+            method: 'POST',
+            headers,
+            body: formData,
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                this.clearAuthTokens();
+                throw new Error('Authentication required');
+            }
+
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    // Get list of students
+    async getStudents(grade?: number, subject?: string) {
+        const params = new URLSearchParams();
+        if (grade) params.append('grade', grade.toString());
+        if (subject) params.append('subject', subject);
+
+        const queryString = params.toString();
+        const endpoint = queryString ? `/adk/v1/students/?${queryString}` : '/adk/v1/students/';
+
+        return this.makeRequest(endpoint);
+    }
+
+    // Get individual student details
+    async getStudent(studentId: string) {
+        return this.makeRequest(`/adk/v1/students/${studentId}`);
+    }
+
+    // Get student learning paths
+    async getStudentLearningPaths(studentId: string) {
+        return this.makeRequest(`/adk/v1/learning/student/${studentId}/learning-paths`);
+    }
+
+    // Delete student
+    async deleteStudent(studentId: string) {
+        return this.makeRequest(`/adk/v1/students/${studentId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    // =================================================================
+    // DOCUMENT APIS
+    // =================================================================
 }
 
 // Create and export singleton instance
