@@ -79,7 +79,13 @@ class ApiService {
             }
 
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+            console.error('API Error:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorData,
+                endpoint
+            });
+            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
         }
 
         return response.json();
@@ -328,6 +334,215 @@ class ApiService {
             return { status: 'disconnected', error: error.message || 'Unknown error' };
         }
     }
+
+    // Document upload (single file with metadata)
+    async uploadDocument(file: File, subject: string, gradeLevel: number) {
+        const formData = new FormData();
+
+        // Add file and metadata to form data
+        formData.append('file', file);
+        formData.append('subject', subject);
+        formData.append('grade_level', gradeLevel.toString());
+
+        const tokens = this.getAuthTokens();
+        const headers: Record<string, string> = {};
+
+        if (tokens?.idToken) {
+            headers['Authorization'] = `Bearer ${tokens.idToken}`;
+        }
+
+        const response = await fetch(`${this.baseUrl}/adk/v1/documents/upload`, {
+            method: 'POST',
+            headers,
+            body: formData,
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                this.clearAuthTokens();
+                throw new Error('Authentication required');
+            }
+
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    // Document upload (multiple files - deprecated, keeping for compatibility)
+    async uploadDocuments(files: File[]) {
+        const formData = new FormData();
+
+        // Add each file to the form data
+        files.forEach((file, index) => {
+            formData.append(`files`, file);
+        });
+
+        const tokens = this.getAuthTokens();
+        const headers: Record<string, string> = {};
+
+        if (tokens?.idToken) {
+            headers['Authorization'] = `Bearer ${tokens.idToken}`;
+        }
+
+        const response = await fetch(`${this.baseUrl}/adk/v1/documents/upload`, {
+            method: 'POST',
+            headers,
+            body: formData,
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                this.clearAuthTokens();
+                throw new Error('Authentication required');
+            }
+
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    // List uploaded documents
+    async listDocuments() {
+        return this.makeRequest('/adk/v1/documents/list');
+    }
+
+    // =================================================================
+    // ASSESSMENT APIS
+    // =================================================================
+
+    // Create assessment configuration
+    async createAssessmentConfig(configData: {
+        name: string;
+        subject: string;
+        target_grade: number;
+        difficulty_level: 'easy' | 'medium' | 'hard';
+        topic: string;
+        question_count?: number;
+        time_limit_minutes?: number;
+    }) {
+        return this.makeRequest('/adk/v1/assessments/configs', {
+            method: 'POST',
+            body: JSON.stringify(configData),
+        });
+    }
+
+    // Generate assessment from configuration
+    async generateAssessmentFromConfig(configId: string) {
+        return this.makeRequest(`/adk/v1/assessments/configs/${configId}/generate`, {
+            method: 'POST',
+        });
+    }
+
+    // Get assessment configurations
+    async getAssessmentConfigs(teacherId?: string) {
+        const params = new URLSearchParams();
+        if (teacherId) {
+            params.append('teacher_id', teacherId);
+        }
+
+        const queryString = params.toString();
+        const endpoint = queryString ? `/adk/v1/assessments/configs?${queryString}` : '/adk/v1/assessments/configs';
+
+        return this.makeRequest(endpoint);
+    }
+
+    // =================================================================
+    // STUDENT APIS
+    // =================================================================
+
+    // Upload students from CSV file
+    async uploadStudentsCSV(file: File): Promise<{
+        total_students: number;
+        students_created: number;
+        students_updated: number;
+        students_failed: number;
+        failed_students: any[];
+        created_student_ids: string[];
+        upload_summary: string;
+    }> {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const tokens = this.getAuthTokens();
+        const headers: Record<string, string> = {};
+
+        if (tokens?.idToken) {
+            headers['Authorization'] = `Bearer ${tokens.idToken}`;
+        }
+
+        const response = await fetch(`${this.baseUrl}/adk/v1/students/upload-csv`, {
+            method: 'POST',
+            headers,
+            body: formData,
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                this.clearAuthTokens();
+                throw new Error('Authentication required');
+            }
+
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    // Get list of students
+    async getStudents(grade?: number, subject?: string) {
+        const params = new URLSearchParams();
+        if (grade) params.append('grade', grade.toString());
+        if (subject) params.append('subject', subject);
+
+        const queryString = params.toString();
+        const endpoint = queryString ? `/adk/v1/students/?${queryString}` : '/adk/v1/students/';
+
+        return this.makeRequest(endpoint);
+    }
+
+    // Get individual student details
+    async getStudent(studentId: string) {
+        return this.makeRequest(`/adk/v1/students/${studentId}`);
+    }
+
+    // Get student learning paths
+    async getStudentLearningPaths(studentId: string) {
+        return this.makeRequest(`/adk/v1/learning/student/${studentId}/learning-paths`);
+    }
+
+    // Delete student
+    async deleteStudent(studentId: string) {
+        return this.makeRequest(`/adk/v1/students/${studentId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    // =================================================================
+    // AI AGENT APIS
+    // =================================================================
+
+    // Invoke AI agent with a message
+    async invokeAgent(message: string): Promise<{
+        response: string;
+        session_id?: string;
+        metadata?: any;
+    }> {
+        return this.makeRequest('/adk/v1/agent/invoke', {
+            method: 'POST',
+            body: JSON.stringify({
+                prompt: message
+            }),
+        });
+    }
+
+    // =================================================================
+    // DOCUMENT APIS
+    // =================================================================
 }
 
 // Create and export singleton instance
