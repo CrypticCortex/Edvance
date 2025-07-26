@@ -5,7 +5,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 
 from app.core.firebase import initialize_firebase
 from app.core.middleware import configure_middleware
-from app.core.streamlined_docs import configure_streamlined_docs
+# from app.core.streamlined_docs import configure_streamlined_docs
 from app.api.v1 import auth as auth_router
 from app.api.v1 import agent as agent_router
 from app.api.v1 import documents as documents_router
@@ -43,6 +43,6 @@ def create_app() -> FastAPI:
     async def health_check():
         return {"status": "healthy", "message": "ADK app is operational"}
     
-    configure_streamlined_docs(app)
+    # configure_streamlined_docs(app)
     
     return app
