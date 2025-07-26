@@ -79,7 +79,13 @@ class ApiService {
             }
 
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+            console.error('API Error:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorData,
+                endpoint
+            });
+            throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
         }
 
         return response.json();
@@ -513,6 +519,24 @@ class ApiService {
     async deleteStudent(studentId: string) {
         return this.makeRequest(`/adk/v1/students/${studentId}`, {
             method: 'DELETE',
+        });
+    }
+
+    // =================================================================
+    // AI AGENT APIS
+    // =================================================================
+
+    // Invoke AI agent with a message
+    async invokeAgent(message: string): Promise<{
+        response: string;
+        session_id?: string;
+        metadata?: any;
+    }> {
+        return this.makeRequest('/adk/v1/agent/invoke', {
+            method: 'POST',
+            body: JSON.stringify({
+                prompt: message
+            }),
         });
     }
 

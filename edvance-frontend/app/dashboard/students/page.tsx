@@ -39,14 +39,14 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
-  
+
   // Modal states
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [studentDetailsOpen, setStudentDetailsOpen] = useState(false)
   const [learningPathsOpen, setLearningPathsOpen] = useState(false)
   const [learningPaths, setLearningPaths] = useState<any[]>([])
   const [pathsLoading, setPathsLoading] = useState(false)
-  
+
   const { toast } = useToast()
 
   const loadStudents = async (isRefresh = false) => {
@@ -157,10 +157,10 @@ export default function StudentsPage() {
     try {
       const studentDetails = await apiService.getStudent(studentId) as Student
       console.log('Student details:', studentDetails)
-      
+
       setSelectedStudent(studentDetails)
       setStudentDetailsOpen(true)
-      
+
     } catch (error: any) {
       console.error('Error fetching student details:', error)
       toast({
@@ -178,15 +178,15 @@ export default function StudentsPage() {
     setSelectedStudent(student)
     setLearningPathsOpen(true)
     setPathsLoading(true)
-    
+
     try {
       const paths = await apiService.getStudentLearningPaths(studentId)
       console.log('Student learning paths:', paths)
-      
+
       // Handle different response formats
       const pathsArray = Array.isArray(paths) ? paths : ((paths as any)?.data || [])
       setLearningPaths(pathsArray)
-      
+
     } catch (error: any) {
       console.error('Error fetching learning paths:', error)
       toast({
@@ -207,12 +207,12 @@ export default function StudentsPage() {
 
     try {
       await apiService.deleteStudent(studentId)
-      
+
       toast({
         title: "Student Deleted",
         description: `${studentName} has been successfully deleted`,
       })
-      
+
       // Refresh the students list
       await loadStudents(true)
     } catch (error: any) {
@@ -416,7 +416,7 @@ export default function StudentsPage() {
         open={studentDetailsOpen}
         onOpenChange={setStudentDetailsOpen}
       />
-      
+
       <LearningPathsModal
         student={selectedStudent}
         paths={learningPaths}
