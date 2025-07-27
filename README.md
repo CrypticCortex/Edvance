@@ -65,17 +65,17 @@ Before testing the backend, ensure you have:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS="svc-acc-key.json"
 
-FIREBASE_PROJECT_ID=""
+   FIREBASE_PROJECT_ID=""
 
-FIREBASE_STORAGE_BUCKET=""
+   FIREBASE_STORAGE_BUCKET=""
 
-GOOGLE_GENAI_USE_VERTEXAI=TRUE
+   GOOGLE_GENAI_USE_VERTEXAI=TRUE
 
-GEMINI_API_KEY=""
+   GEMINI_API_KEY=""
 
-GOOGLE_CLOUD_PROJECT=""
+   GOOGLE_CLOUD_PROJECT=""
 
-GOOGLE_CLOUD_LOCATION=""
+   GOOGLE_CLOUD_LOCATION=""
    ```
 
 4. **Start the Development Server:**
@@ -83,8 +83,6 @@ GOOGLE_CLOUD_LOCATION=""
    # Using uvicorn directly
    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    
-   # Or using Python
-   python -m app.main
    ```
 
 5. **Verify Installation:**
