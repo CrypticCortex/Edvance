@@ -51,6 +51,8 @@ Before testing the backend, ensure you have:
 
 ### 🛠️ Installation & Setup
 
+#### Backend
+
 1. **Clone and Navigate to Backend:**
    ```bash
    cd edvance-ai-backend
@@ -88,6 +90,39 @@ Before testing the backend, ensure you have:
 5. **Verify Installation:**
    ```bash
    curl http://localhost:8000/health
+   ```
+
+#### Frontend
+1. **Clone and Navigate to Backend:**
+   ```bash
+   cd edvance-frontend
+   ```
+
+2. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
+   Note: npm >= 20
+   
+4. **Configure Environment Variables (.env.local inside edvance-ai-backend folder):**
+   ```bash
+   # Firebase Configuration
+   NEXT_PUBLIC_FIREBASE_API_KEY=""
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=""
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID=""
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=""
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=""
+   NEXT_PUBLIC_FIREBASE_APP_ID=""
+   NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=""
+   
+   # Backend API Configuration
+   NEXT_PUBLIC_API_URL=http://localhost:8000
+   ```
+
+5. **Start the Development Server:**
+   ```bash
+   npm run dev
+   
    ```
 
 ### 📖 API Documentation
