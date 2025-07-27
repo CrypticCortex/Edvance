@@ -9,7 +9,7 @@ import { LanguageSelector } from "@/components/ui/language-selector"
 import { Plus, BookOpen, Users, Clock, BarChart3, Eye, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useLanguage } from "@/contexts/LanguageContext"
-import { apiService, handleApiError, getUserFromStorage } from "@/lib/api"
+import { apiService, handleApiError } from "@/lib/api"
 
 interface Assessment {
   id: string
@@ -40,7 +40,7 @@ export default function AssessmentsPage() {
 
     try {
       // Get teacher ID from local storage
-      const teacherData = getUserFromStorage()
+      const teacherData = apiService.getCurrentUser()
       const teacherId = teacherData?.uid
 
       console.log('Teacher data:', teacherData)
