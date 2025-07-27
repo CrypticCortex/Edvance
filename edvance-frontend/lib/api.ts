@@ -931,6 +931,29 @@ class ApiService {
         return this.makeRequest<string[]>(`/adk/v1/assessments/topics/${subject}/${grade}`);
     }
 
+    // Get specific assessment configuration by ID
+    async getAssessmentConfig(configId: string) {
+        return this.makeRequest(`/adk/v1/assessments/configs/${configId}`);
+    }
+
+    // Get all generated assessments for the teacher
+    async getAssessments(subject?: string) {
+        const params = new URLSearchParams();
+        if (subject) {
+            params.append('subject', subject);
+        }
+
+        const queryString = params.toString();
+        const endpoint = queryString ? `/adk/v1/assessments?${queryString}` : '/adk/v1/assessments';
+
+        return this.makeRequest(endpoint);
+    }
+
+    // Get specific generated assessment by ID
+    async getAssessment(assessmentId: string) {
+        return this.makeRequest(`/adk/v1/assessments/${assessmentId}`);
+    }
+
     // =================================================================
     // STUDENT APIS
     // =================================================================

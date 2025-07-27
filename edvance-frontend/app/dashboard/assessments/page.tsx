@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -30,6 +31,7 @@ export default function AssessmentsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const { toast } = useToast()
   const { currentLanguage } = useLanguage()
+  const router = useRouter()
 
   const loadAssessments = async (isRefresh = false) => {
     if (isRefresh) {
@@ -70,7 +72,7 @@ export default function AssessmentsPage() {
           questions_count: config.question_count || 10,
           estimated_duration_minutes: config.time_limit_minutes || 30,
           created_at: config.created_at || new Date().toISOString(),
-          teacher_id: config.teacher_id || teacherId,
+          teacher_id: config.teacher_uid || config.teacher_id || teacherId,
           difficulty_level: config.difficulty_level || 'medium'
         }))
 
@@ -116,6 +118,10 @@ export default function AssessmentsPage() {
       month: 'short',
       day: 'numeric'
     })
+  }
+
+  const handleViewAssessment = (assessmentId: string) => {
+    router.push(`/dashboard/assessments/${assessmentId}`)
   }
 
   if (loading) {
@@ -250,7 +256,11 @@ export default function AssessmentsPage() {
                   Created {formatDate(assessment.created_at)}
                 </span>
                 <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleViewAssessment(assessment.id)}
+                  >
                     <Eye className="h-4 w-4 mr-1" />
                     View
                   </Button>

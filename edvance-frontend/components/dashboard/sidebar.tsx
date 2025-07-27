@@ -74,7 +74,7 @@ export function Sidebar() {
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
               <span className="text-sm font-medium text-green-800">AI Agent Active</span>
             </div>
-            <p className="text-xs text-green-600 mt-1">Monitoring 28 students</p>
+            <p className="text-xs text-green-600 mt-1">Monitoring 4 students</p>
           </div>
         </div>
       )}
