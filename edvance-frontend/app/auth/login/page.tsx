@@ -66,9 +66,29 @@ export default function LoginPage() {
           throw new Error(studentAuth.error || 'Student authentication failed')
         }
 
-        // Store student data locally
-        localStorage.setItem("student_token", studentAuth.token || "")
-        localStorage.setItem("student_data", JSON.stringify(studentAuth.user))
+        console.log('Student auth successful, storing data:', {
+          token: studentAuth.token,
+          user: studentAuth.user,
+          session_id: studentAuth.session_id
+        });
+
+        // Store student data using the proper method
+        if (studentAuth.token && studentAuth.user && studentAuth.session_id) {
+          apiService.setStudentAuth({
+            token: studentAuth.token,
+            user: studentAuth.user,
+            session_id: studentAuth.session_id
+          });
+        } else {
+          // Fallback to manual storage if session_id is missing
+          localStorage.setItem("student_token", studentAuth.token || "")
+          localStorage.setItem("student_data", JSON.stringify(studentAuth.user))
+        }
+
+        // Verify data was stored
+        console.log('Verification - Token stored:', localStorage.getItem("student_token"));
+        console.log('Verification - Data stored:', localStorage.getItem("student_data"));
+        console.log('Verification - Session ID stored:', localStorage.getItem("student_session_id"));
 
         toast({
           title: "Login Successful",

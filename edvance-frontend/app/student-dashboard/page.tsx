@@ -164,9 +164,13 @@ export default function StudentDashboard() {
     const router = useRouter()
 
     useEffect(() => {
+        // Debug: Check auth state on mount
+        apiService.debugAuthState();
+
         // Check if user is authenticated as student
         const studentToken = localStorage.getItem('student_token')
         if (!studentToken) {
+            console.warn('No student token found, redirecting to login');
             router.push('/auth/login')
             return
         }
@@ -179,18 +183,25 @@ export default function StudentDashboard() {
             setLoading(true)
             setError(null)
 
+            console.log('Loading student data...');
+            apiService.debugAuthState();
+
             // Get student data from localStorage
             const storedData = localStorage.getItem('student_data')
             if (!storedData) {
+                console.error('No student data found in localStorage');
                 router.push('/auth/login')
                 return
             }
 
             const student = JSON.parse(storedData)
             const studentId = student.student_id
+            console.log('Student ID:', studentId);
 
             // Fetch all student dashboard data from the backend
             const dashboardData = await apiService.getStudentDashboardData(studentId)
+
+            console.log('Dashboard data loaded:', dashboardData);
 
             setStudentData(dashboardData.student as StudentData)
             setProgress(dashboardData.progress as StudentProgress)
@@ -317,14 +328,20 @@ export default function StudentDashboard() {
         }
     }
 
-    const handleLogout = () => {
-        localStorage.removeItem('student_token')
-        localStorage.removeItem('student_data')
-        toast({
-            title: "Logged Out",
-            description: "You have been successfully logged out",
-        })
-        router.push('/auth/login')
+    const handleLogout = async () => {
+        try {
+            await apiService.logout();
+            toast({
+                title: "Logged Out",
+                description: "You have been successfully logged out",
+            })
+        } catch (error) {
+            console.error('Logout error:', error);
+            // Clear local storage manually if API logout fails
+            apiService.clearStudentAuth();
+        } finally {
+            router.push('/auth/login')
+        }
     }
 
     const getStatusIcon = (status: string) => {
