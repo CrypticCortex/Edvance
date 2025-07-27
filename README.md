@@ -413,32 +413,6 @@ edvance-ai-backend/
 └── test_*.py                 # Test scripts
 ```
 
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **Authentication Errors**
-   ```bash
-   # Verify service account permissions
-   gcloud auth activate-service-account --key-file=svc-acc-key.json
-   ```
-
-2. **Import Errors**
-   ```bash
-   # Ensure all dependencies are installed
-   pip install -r requirements.txt --upgrade
-   ```
-
-3. **Firebase Connection Issues**
-   ```bash
-   # Check project configuration
-   firebase projects:list
-   ```
-
-4. **API Documentation Not Loading**
-   - Ensure the server is running on the correct port
-   - Check if ADK middleware is properly configured
-
 ## 📞 Support
 
 For technical support or questions about the Edvance AI platform:
