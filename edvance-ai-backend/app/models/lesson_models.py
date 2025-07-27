@@ -20,8 +20,6 @@ class ContentElementType(str, Enum):
     """Types of content elements within a slide."""
     TEXT = "text"
     IMAGE = "image"
-    VIDEO = "video"
-    AUDIO = "audio"
     INTERACTIVE_WIDGET = "interactive_widget"
     QUIZ = "quiz"
     EXERCISE = "exercise"
@@ -51,9 +49,7 @@ class ContentElement(BaseModel):
     interactive_widget: Optional[InteractiveWidget] = Field(None, description="Interactive widget if applicable")
     
     # Media elements
-    media_url: Optional[str] = Field(None, description="URL for media content")
-    alt_text: Optional[str] = Field(None, description="Alternative text for accessibility")
-    
+    alt_text: Optional[str] = Field(None, description="Alternative text for images")
     # Styling and layout
     styling: Dict[str, Any] = Field(default={}, description="Styling and layout options")
 
