@@ -8,6 +8,7 @@ import {
     onAuthStateChanged,
     User
 } from 'firebase/auth';
+import { getFirestore, doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 // Firebase configuration - replace with your actual config
 const firebaseConfig = {
@@ -22,6 +23,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 export interface AuthResult {
     success: boolean;
@@ -93,6 +95,106 @@ class FirebaseAuthService {
         return onAuthStateChanged(auth, callback);
     }
 
+    // Student authentication using Firestore
+    async authenticateStudent(userId: string, password: string): Promise<{
+        success: boolean;
+        student?: any;
+        token?: string;
+        error?: string;
+    }> {
+        try {
+            console.log('Attempting to authenticate student:', userId);
+
+            // Query the students collection for the provided user ID
+            const studentsRef = collection(db, 'students');
+            const q = query(studentsRef, where('student_id', '==', userId));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                console.log('No student found with ID:', userId);
+                return {
+                    success: false,
+                    error: 'Student ID not found'
+                };
+            }
+
+            // Get the first (and should be only) matching student
+            const studentDoc = querySnapshot.docs[0];
+            const studentData = studentDoc.data();
+            console.log('Found student data:', {
+                student_id: studentData.student_id,
+                first_name: studentData.first_name,
+                is_active: studentData.is_active
+            });
+
+            // Check if the password matches the default password
+            if (password !== studentData.default_password) {
+                console.log('Password mismatch for student:', userId);
+                return {
+                    success: false,
+                    error: 'Invalid password'
+                };
+            }
+
+            // Check if student is active
+            if (!studentData.is_active) {
+                console.log('Student account is inactive:', userId);
+                return {
+                    success: false,
+                    error: 'Student account is inactive'
+                };
+            }
+
+            // Generate a simple session token (in production, use a more secure method)
+            const sessionToken = studentData.current_session_token || this.generateSessionToken();
+            console.log('Student authentication successful:', userId);
+
+            return {
+                success: true,
+                student: {
+                    id: studentDoc.id,
+                    student_id: studentData.student_id,
+                    first_name: studentData.first_name,
+                    last_name: studentData.last_name,
+                    grade: studentData.grade,
+                    subjects: studentData.subjects,
+                    teacher_uid: studentData.teacher_uid,
+                    ...studentData
+                },
+                token: sessionToken
+            };
+
+        } catch (error: any) {
+            console.error('Student authentication error:', error);
+
+            // Check if it's a permissions error
+            if (error.code === 'permission-denied') {
+                return {
+                    success: false,
+                    error: 'Database access denied. Please contact your administrator to update Firebase security rules.'
+                };
+            }
+
+            // Check if it's a network error
+            if (error.code === 'unavailable') {
+                return {
+                    success: false,
+                    error: 'Database temporarily unavailable. Please try again later.'
+                };
+            }
+
+            return {
+                success: false,
+                error: `Authentication failed: ${error.message || 'Please try again.'}`
+            };
+        }
+    }
+
+    // Generate a simple session token (in production, use JWT or similar)
+    private generateSessionToken(): string {
+        return btoa(`${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    }
+
     // Convert Firebase error codes to user-friendly messages
     private getErrorMessage(errorCode: string): string {
         switch (errorCode) {
@@ -117,4 +219,4 @@ class FirebaseAuthService {
 }
 
 export const firebaseAuth = new FirebaseAuthService();
-export { auth };
+export { auth, db };
