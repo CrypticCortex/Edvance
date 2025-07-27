@@ -48,6 +48,9 @@ class ApiService {
             localStorage.removeItem('auth_tokens');
             localStorage.removeItem('teacher_data');
             localStorage.removeItem('teacher_token');
+            // Also clear student authentication data
+            localStorage.removeItem('student_token');
+            localStorage.removeItem('student_data');
         }
     }
 
@@ -62,8 +65,17 @@ class ApiService {
             ...(options.headers as Record<string, string>),
         };
 
+        // Check for teacher authentication tokens first
         if (tokens?.idToken) {
             headers['Authorization'] = `Bearer ${tokens.idToken}`;
+        } else {
+            // Check for student authentication token
+            if (typeof window !== 'undefined') {
+                const studentToken = localStorage.getItem('student_token');
+                if (studentToken) {
+                    headers['Authorization'] = `Bearer ${studentToken}`;
+                }
+            }
         }
 
         const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -128,6 +140,38 @@ class ApiService {
         }>('/adk/v1/auth/me');
     }
 
+    // Student login with user ID and password
+    async studentLogin(userId: string, password: string): Promise<{
+        success: boolean;
+        token?: string;
+        user?: any;
+        error?: string;
+    }> {
+        try {
+            const response = await this.makeRequest<{
+                token: string;
+                user: any;
+            }>('/adk/v1/auth/student-login', {
+                method: 'POST',
+                body: JSON.stringify({
+                    user_id: userId,
+                    password: password
+                }),
+            });
+
+            return {
+                success: true,
+                token: response.token,
+                user: response.user
+            };
+        } catch (error: any) {
+            return {
+                success: false,
+                error: error.message || 'Student login failed'
+            };
+        }
+    }
+
     async updateProfile(profileData: {
         subjects?: string[];
         first_name?: string;
@@ -174,14 +218,39 @@ class ApiService {
         });
     }
 
+    // Create enhanced assessment
+    async createEnhancedAssessment(assessmentData: {
+        name: string;
+        subject: string;
+        target_grade: number;
+        difficulty_level: 'easy' | 'medium' | 'hard';
+        topic: string;
+        question_count?: number;
+        time_limit_minutes?: number;
+        learning_objectives: string[];
+        assessment_focus: 'knowledge' | 'comprehension' | 'application' | 'analysis' | 'synthesis' | 'evaluation';
+        question_types: Array<{
+            type: 'multiple_choice' | 'true_false' | 'fill_blank';
+            count: number;
+        }>;
+        estimated_duration_minutes: number;
+    }, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/assessments/enhanced/create${params}`, {
+            method: 'POST',
+            body: JSON.stringify(assessmentData),
+        });
+    }
+
     async analyzeAssessment(analysisData: {
         student_id: string;
         assessment_id: string;
         student_answers: number[];
         time_taken_minutes: number;
         submission_timestamp: string;
-    }) {
-        return this.makeRequest('/adk/v1/learning/analyze-assessment', {
+    }, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/learning/analyze-assessment${params}`, {
             method: 'POST',
             body: JSON.stringify(analysisData),
         });
@@ -215,8 +284,9 @@ class ApiService {
         target_grade: number;
         learning_goals: string[];
         include_recent_assessments?: number;
-    }) {
-        return this.makeRequest('/adk/v1/learning/generate-learning-path', {
+    }, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/learning/generate-learning-path${params}`, {
             method: 'POST',
             body: JSON.stringify(pathData),
         });
@@ -258,8 +328,9 @@ class ApiService {
                 target_grade: number;
             };
         };
-    }) {
-        return this.makeRequest('/adk/v1/lessons/create-from-step', {
+    }, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/lessons/create-from-step${params}`, {
             method: 'POST',
             body: JSON.stringify(lessonData),
         });
@@ -304,6 +375,39 @@ class ApiService {
 
     async getStudentInsights(studentId: string) {
         return this.makeRequest(`/adk/v1/learning/student/${studentId}/learning-insights`);
+    }
+
+    // Get complete student dashboard data
+    async getStudentDashboardData(studentId: string) {
+        try {
+            const [studentData, progress, learningPaths, insights] = await Promise.all([
+                this.getStudent(studentId),
+                this.getStudentProgress(studentId),
+                this.getStudentLearningPaths(studentId),
+                this.getStudentInsights(studentId)
+            ]);
+
+            // Also fetch assessments - for now we'll use a placeholder since we need to check what endpoint is available
+            let assessments: any[] = [];
+            try {
+                // Try to get assessments from the learning paths response or create a mock structure
+                assessments = [];
+            } catch (assessmentError) {
+                console.warn('Could not fetch assessments:', assessmentError);
+                assessments = [];
+            }
+
+            return {
+                student: studentData,
+                progress: progress,
+                learningPaths: learningPaths,
+                insights: insights,
+                assessments: assessments
+            };
+        } catch (error) {
+            console.error('Error fetching student dashboard data:', error);
+            throw error;
+        }
     }
 
     async submitTeacherFeedback(feedbackData: {
@@ -431,23 +535,45 @@ class ApiService {
     }
 
     // Generate assessment from configuration
-    async generateAssessmentFromConfig(configId: string) {
-        return this.makeRequest(`/adk/v1/assessments/configs/${configId}/generate`, {
+    async generateAssessmentFromConfig(configId: string, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/assessments/configs/${configId}/generate${params}`, {
+            method: 'POST',
+        });
+    }
+
+    // Generate RAG-based assessment
+    async generateRagAssessment(configId: string, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/assessments/configs/${configId}/generate-rag${params}`, {
+            method: 'POST',
+        });
+    }
+
+    // Generate simple assessment
+    async generateSimpleAssessment(configId: string, language?: string) {
+        const params = language ? `?lang=${encodeURIComponent(language)}` : '';
+        return this.makeRequest(`/adk/v1/assessments/configs/${configId}/generate${params}`, {
             method: 'POST',
         });
     }
 
     // Get assessment configurations
-    async getAssessmentConfigs(teacherId?: string) {
+    async getAssessmentConfigs(subject?: string) {
         const params = new URLSearchParams();
-        if (teacherId) {
-            params.append('teacher_id', teacherId);
+        if (subject) {
+            params.append('subject', subject);
         }
 
         const queryString = params.toString();
         const endpoint = queryString ? `/adk/v1/assessments/configs?${queryString}` : '/adk/v1/assessments/configs';
 
         return this.makeRequest(endpoint);
+    }
+
+    // Get available topics for a subject and grade
+    async getAssessmentTopics(subject: string, grade: number): Promise<string[]> {
+        return this.makeRequest<string[]>(`/adk/v1/assessments/topics/${subject}/${grade}`);
     }
 
     // =================================================================
@@ -515,6 +641,11 @@ class ApiService {
         return this.makeRequest(`/adk/v1/learning/student/${studentId}/learning-paths`);
     }
 
+    // Get student assessments - using the same endpoint as learning paths since assessments are part of learning
+    async getStudentAssessments(studentId: string) {
+        return this.makeRequest(`/adk/v1/learning/student/${studentId}/learning-paths`);
+    }
+
     // Delete student
     async deleteStudent(studentId: string) {
         return this.makeRequest(`/adk/v1/students/${studentId}`, {
@@ -527,22 +658,56 @@ class ApiService {
     // =================================================================
 
     // Invoke AI agent with a message
-    async invokeAgent(message: string): Promise<{
+    async invokeAgent(message: string, language?: string): Promise<{
         response: string;
         session_id?: string;
         metadata?: any;
     }> {
+        const requestBody: any = { prompt: message };
+        if (language) {
+            requestBody.lang = language;
+        }
+
         return this.makeRequest('/adk/v1/agent/invoke', {
             method: 'POST',
-            body: JSON.stringify({
-                prompt: message
-            }),
+            body: JSON.stringify(requestBody),
         });
     }
 
     // =================================================================
     // DOCUMENT APIS
     // =================================================================
+
+    // =================================================================
+    // STUDENT ASSESSMENT APIS (for students)
+    // =================================================================
+
+    // Get assessments for the current student
+    async getMyAssessments(subject?: string, statusFilter?: string) {
+        const params = new URLSearchParams();
+        if (subject) params.append('subject', subject);
+        if (statusFilter) params.append('status_filter', statusFilter);
+
+        const queryString = params.toString();
+        const endpoint = queryString ? `/adk/v1/students/assessments?${queryString}` : '/adk/v1/students/assessments';
+
+        return this.makeRequest(endpoint);
+    }
+
+    // Get specific assessment for student
+    async getMyAssessment(assessmentId: string) {
+        return this.makeRequest(`/adk/v1/students/assessments/${assessmentId}`);
+    }
+
+    // Get available assessment subjects for student
+    async getMyAssessmentSubjects() {
+        return this.makeRequest('/adk/v1/students/assessments/subjects/available');
+    }
+
+    // Get assessment summary/stats for student
+    async getMyAssessmentSummary() {
+        return this.makeRequest('/adk/v1/students/assessments/stats/summary');
+    }
 }
 
 // Create and export singleton instance

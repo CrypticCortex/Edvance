@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { LanguageSelector } from "@/components/ui/language-selector"
 import { useToast } from "@/hooks/use-toast"
+import { useLanguage } from "@/contexts/LanguageContext"
 import { apiService, handleApiError } from "@/lib/api"
 import { ArrowLeft, Wand2, Eye, Save } from "lucide-react"
 import Link from "next/link"
@@ -52,6 +54,7 @@ interface GeneratedAssessment {
 export default function CreateAssessmentPage() {
     const router = useRouter()
     const { toast } = useToast()
+    const { currentLanguage } = useLanguage()
 
     const [formData, setFormData] = useState<AssessmentConfig>({
         name: '',
@@ -105,7 +108,7 @@ export default function CreateAssessmentPage() {
         setIsGenerating(true)
         try {
             console.log('Generating assessment with config ID:', targetConfigId)
-            const response = await apiService.generateAssessmentFromConfig(targetConfigId) as any
+            const response = await apiService.generateAssessmentFromConfig(targetConfigId, currentLanguage) as any
             console.log('Generate assessment response:', response)
 
             // Handle different response formats
@@ -427,6 +430,12 @@ export default function CreateAssessmentPage() {
                                     <SelectItem value="hard">Hard</SelectItem>
                                 </SelectContent>
                             </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Language</Label>
+                            <LanguageSelector variant="button" className="w-full justify-start" />
+                            <p className="text-xs text-gray-500">AI will generate questions in the selected language</p>
                         </div>
 
                         <div className="space-y-2">

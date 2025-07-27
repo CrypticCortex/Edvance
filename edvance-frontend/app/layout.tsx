@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { LanguageProvider } from "@/contexts/LanguageContext"
 import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
@@ -19,8 +20,10 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
-          <Toaster />
+          <LanguageProvider>
+            {children}
+            <Toaster />
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

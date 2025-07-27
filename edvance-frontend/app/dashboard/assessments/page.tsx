@@ -5,8 +5,10 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { LanguageSelector } from "@/components/ui/language-selector"
 import { Plus, BookOpen, Users, Clock, BarChart3, Eye, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useLanguage } from "@/contexts/LanguageContext"
 import { apiService, handleApiError, getUserFromStorage } from "@/lib/api"
 
 interface Assessment {
@@ -27,6 +29,7 @@ export default function AssessmentsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const { toast } = useToast()
+  const { currentLanguage } = useLanguage()
 
   const loadAssessments = async (isRefresh = false) => {
     if (isRefresh) {
@@ -43,8 +46,8 @@ export default function AssessmentsPage() {
       console.log('Teacher data:', teacherData)
       console.log('Fetching assessments for teacher ID:', teacherId)
 
-      // Load assessment configurations from the API with teacher filtering
-      const response = await apiService.getAssessmentConfigs(teacherId) as any
+      // Load assessment configurations from the API - backend will filter by authenticated user
+      const response = await apiService.getAssessmentConfigs() as any
       console.log('API response:', response)
 
       if (response && (response.success !== false)) {
@@ -135,6 +138,7 @@ export default function AssessmentsPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <LanguageSelector variant="compact" />
           <Button
             variant="outline"
             onClick={() => loadAssessments(true)}

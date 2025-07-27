@@ -2,8 +2,11 @@
 
 from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, status, Depends
+import secrets
+import hashlib
 # Make sure to import UserProfileUpdate
 from app.models import UserCreate, UserInDB, UserProfileUpdate
+from app.models.requests import StudentLogin, StudentAuthResponse
 from app.core.firebase import firebase_auth, db
 from firebase_admin.auth import EmailAlreadyExistsError, UserNotFoundError
 from app.core.auth import get_current_user
@@ -121,3 +124,93 @@ def verify_token_test(current_user: dict = Depends(get_current_user)):
         "message": "Token is valid.",
         "decoded_token": current_user
     }
+
+@router.post("/student-login", response_model=StudentAuthResponse, tags=["Student Authentication"])
+async def student_login(login_data: StudentLogin):
+    """
+    Authenticate a student using their student ID and password.
+    
+    This endpoint:
+    1. Searches for a student with the provided student_id
+    2. Validates the password against the default_password
+    3. Returns a session token and user data if authentication succeeds
+    
+    Args:
+        login_data: StudentLogin containing user_id and password
+        
+    Returns:
+        StudentAuthResponse with token, user data, and session_id
+        
+    Raises:
+        HTTPException: If authentication fails
+    """
+    try:
+        # Search for student by student_id in Firestore
+        students_ref = db.collection("students")
+        query = students_ref.where("student_id", "==", login_data.user_id).limit(1)
+        results = query.stream()
+        
+        student_doc = None
+        for doc in results:
+            student_doc = doc
+            break
+            
+        if not student_doc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid student ID or password"
+            )
+            
+        student_data = student_doc.to_dict()
+        
+        # Validate password (using simple string comparison for now)
+        # In production, you might want to hash passwords
+        if student_data.get("default_password") != login_data.password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid student ID or password"
+            )
+            
+        # Check if student is active
+        if not student_data.get("is_active", True):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Student account is deactivated. Please contact your teacher."
+            )
+            
+        # Generate a simple session token (in production, use JWT or similar)
+        session_token = secrets.token_urlsafe(32)
+        session_id = f"student_session_{student_doc.id}_{int(datetime.utcnow().timestamp())}"
+        
+        # Update last login time
+        student_doc.reference.update({
+            "last_login": datetime.utcnow(),
+            "current_session_token": session_token
+        })
+        
+        # Remove sensitive data from response
+        safe_user_data = {
+            "student_id": student_data.get("student_id"),
+            "first_name": student_data.get("first_name"),
+            "last_name": student_data.get("last_name"),
+            "grade": student_data.get("grade"),
+            "subjects": student_data.get("subjects", []),
+            "current_learning_paths": student_data.get("current_learning_paths", {}),
+            "performance_metrics": student_data.get("performance_metrics", {}),
+            "doc_id": student_doc.id
+        }
+        
+        return StudentAuthResponse(
+            token=session_token,
+            user=safe_user_data,
+            session_id=session_id
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred during student authentication: {str(e)}"
+        )

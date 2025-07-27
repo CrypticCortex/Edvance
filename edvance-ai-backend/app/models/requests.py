@@ -20,6 +20,17 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class StudentLogin(BaseModel):
+    """Student login request model."""
+    user_id: str = Field(..., description="Student ID for authentication")
+    password: str = Field(..., description="Student password")
+
+class StudentAuthResponse(BaseModel):
+    """Student authentication response model."""
+    token: str = Field(..., description="Authentication token for the student")
+    user: Dict[str, Any] = Field(..., description="Student profile data")
+    session_id: str = Field(..., description="Session identifier")
+
 class Token(BaseModel):
     id_token: str
     token_type: str = "bearer"

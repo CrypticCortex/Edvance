@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from typing import Dict, Any, List, Optional
 import logging
 
-from app.models.student import StudentProfile, StudentBatchUploadResponse
+from app.models.student import StudentProfile, StudentBatchUploadResponse, Assessment
 from app.core.auth import get_current_user
 from app.services.student_service import student_service
 
@@ -280,4 +280,248 @@ async def get_student_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get student summary: {str(e)}"
+        )
+
+# ====================================================================
+# Student Assessment Endpoints
+# ====================================================================
+
+@router.get("/assessments", response_model=List[Assessment], tags=["Student Assessments"])
+async def get_my_assessments(
+    subject: Optional[str] = Query(None, description="Filter by subject"),
+    status_filter: Optional[str] = Query(None, description="Filter by status: 'active', 'completed', 'all'"),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> List[Assessment]:
+    """
+    Get all assessments assigned to the current student.
+    
+    This endpoint allows students to view assessments that have been created by their teachers
+    and are available for them to take based on their enrolled subjects and grade level.
+    
+    Args:
+        subject: Optional filter by subject (must be one of student's enrolled subjects)
+        status_filter: Optional filter by status ('active', 'completed', 'all')
+        current_user: The authenticated student
+        
+    Returns:
+        List of Assessment objects available to the student
+        
+    Raises:
+        HTTPException: If retrieval fails or student not found
+    """
+    student_uid = current_user["student_id"]
+    print("Student ID:", student_uid)
+    
+    try:
+        logger.info(f"Retrieving assessments for student {student_uid}")
+        
+        # Get student profile to verify they exist and get their details
+        student = await student_service.get_student_by_id(student_uid)
+        
+        if not student:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Student profile not found"
+            )
+        
+        if not student.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Student account is inactive"
+            )
+        
+        # Validate subject filter against student's enrolled subjects
+        if subject and subject not in student.subjects:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Student is not enrolled in subject: {subject}"
+            )
+        
+        # Get assessments for this student
+        assessments = await student_service.get_student_assessments(
+            student_uid=student_uid,
+            teacher_uid=student.teacher_uid,
+            student_grade=student.grade,
+            student_subjects=student.subjects,
+            subject_filter=subject,
+            status_filter=status_filter
+        )
+        
+        logger.info(f"Retrieved {len(assessments)} assessments for student {student_uid}")
+        return assessments
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve assessments for student {student_uid}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve assessments: {str(e)}"
+        )
+
+@router.get("/assessments/{assessment_id}", response_model=Assessment, tags=["Student Assessments"])
+async def get_assessment_for_student(
+    assessment_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Assessment:
+    """
+    Get a specific assessment that is available to the current student.
+    
+    This endpoint allows students to access the full details of an assessment,
+    including all questions, if they are eligible to take it.
+    
+    Args:
+        assessment_id: The assessment's unique identifier
+        current_user: The authenticated student
+        
+    Returns:
+        Assessment object with full details
+        
+    Raises:
+        HTTPException: If assessment not found, not accessible, or student not eligible
+    """
+    student_uid = current_user["uid"]
+    
+    try:
+        logger.info(f"Retrieving assessment {assessment_id} for student {student_uid}")
+        
+        # Get student profile
+        student = await student_service.get_student_by_id(student_uid)
+        
+        if not student:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Student profile not found"
+            )
+        
+        if not student.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Student account is inactive"
+            )
+        
+        # Get the specific assessment and verify student can access it
+        assessment = await student_service.get_assessment_for_student(
+            assessment_id=assessment_id,
+            student_uid=student_uid,
+            teacher_uid=student.teacher_uid,
+            student_grade=student.grade,
+            student_subjects=student.subjects
+        )
+        
+        if not assessment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assessment not found or not accessible to this student"
+            )
+        
+        logger.info(f"Retrieved assessment {assessment_id} for student {student_uid}")
+        return assessment
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get assessment {assessment_id} for student {student_uid}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve assessment: {str(e)}"
+        )
+
+@router.get("/assessments/subjects/available", response_model=List[str], tags=["Student Assessments"])
+async def get_available_assessment_subjects(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> List[str]:
+    """
+    Get list of subjects that have available assessments for the current student.
+    
+    This helps students understand which subjects have assessments they can take.
+    
+    Args:
+        current_user: The authenticated student
+        
+    Returns:
+        List of subject names that have available assessments
+        
+    Raises:
+        HTTPException: If retrieval fails or student not found
+    """
+    student_uid = current_user["uid"]
+    
+    try:
+        # Get student profile
+        student = await student_service.get_student_by_id(student_uid)
+        
+        if not student:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Student profile not found"
+            )
+        
+        # Get subjects with available assessments
+        available_subjects = await student_service.get_subjects_with_assessments(
+            student_uid=student_uid,
+            teacher_uid=student.teacher_uid,
+            student_grade=student.grade,
+            student_subjects=student.subjects
+        )
+        
+        return available_subjects
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get available subjects for student {student_uid}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve available subjects: {str(e)}"
+        )
+
+@router.get("/assessments/stats/summary", response_model=Dict[str, Any], tags=["Student Assessments"])
+async def get_student_assessment_summary(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Get assessment statistics and summary for the current student.
+    
+    This provides an overview of the student's assessment activity including
+    completed assessments, pending assessments, and performance metrics.
+    
+    Args:
+        current_user: The authenticated student
+        
+    Returns:
+        Dictionary with assessment statistics and summary
+        
+    Raises:
+        HTTPException: If retrieval fails or student not found
+    """
+    student_uid = current_user["uid"]
+    
+    try:
+        # Get student profile
+        student = await student_service.get_student_by_id(student_uid)
+        
+        if not student:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Student profile not found"
+            )
+        
+        # Get assessment summary
+        summary = await student_service.get_student_assessment_summary(
+            student_uid=student_uid,
+            teacher_uid=student.teacher_uid,
+            student_grade=student.grade,
+            student_subjects=student.subjects
+        )
+        
+        return summary
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get assessment summary for student {student_uid}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve assessment summary: {str(e)}"
         )

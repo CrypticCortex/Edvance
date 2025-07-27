@@ -294,6 +294,390 @@ class StudentService:
                 status_code=500,
                 detail=f"Failed to deactivate student: {str(e)}"
             )
+    
+    # ====================================================================
+    # Student Assessment Methods
+    # ====================================================================
+    
+    async def get_student_assessments(
+        self,
+        student_uid: str,
+        teacher_uid: str,
+        student_grade: int,
+        student_subjects: List[str],
+        subject_filter: Optional[str] = None,
+        status_filter: Optional[str] = None
+    ) -> List[Assessment]:
+        """
+        Get all assessments available to a specific student.
+        
+        Args:
+            student_uid: Student's unique identifier
+            teacher_uid: Teacher's unique identifier
+            student_grade: Student's grade level
+            student_subjects: List of subjects student is enrolled in
+            subject_filter: Optional subject filter
+            status_filter: Optional status filter ('active', 'completed', 'all')
+            
+        Returns:
+            List of Assessment objects available to the student
+        """
+        try:
+            # Build query for assessments created by the student's teacher
+            query = (db.collection(self.assessments_collection)
+                    .where("teacher_uid", "==", teacher_uid)
+                    .where("is_active", "==", True))
+            
+            # Get all assessments
+            docs = query.get()
+            available_assessments = []
+            
+            # Get student's completed assessments for status filtering
+            completed_assessment_ids = set()
+            if status_filter in ['completed', 'all']:
+                completed_assessment_ids = await self._get_completed_assessment_ids(student_uid)
+            
+            for doc in docs:
+                assessment_data = doc.to_dict()
+                assessment = Assessment(**assessment_data)
+                
+                # Check if assessment is suitable for this student
+                if not self._is_assessment_suitable_for_student(
+                    assessment, student_grade, student_subjects, subject_filter
+                ):
+                    continue
+                
+                # Apply status filter
+                if status_filter == 'active' and assessment.assessment_id in completed_assessment_ids:
+                    continue
+                elif status_filter == 'completed' and assessment.assessment_id not in completed_assessment_ids:
+                    continue
+                
+                # Remove correct answers for student view (security)
+                assessment = self._sanitize_assessment_for_student(assessment)
+                available_assessments.append(assessment)
+            
+            # Sort by creation date (newest first)
+            available_assessments.sort(key=lambda a: a.created_at, reverse=True)
+            
+            logger.info(f"Found {len(available_assessments)} assessments for student {student_uid}")
+            return available_assessments
+            
+        except Exception as e:
+            logger.error(f"Failed to get student assessments: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve assessments: {str(e)}"
+            )
+    
+    async def get_assessment_for_student(
+        self,
+        assessment_id: str,
+        student_uid: str,
+        teacher_uid: str,
+        student_grade: int,
+        student_subjects: List[str]
+    ) -> Optional[Assessment]:
+        """
+        Get a specific assessment for a student if they're eligible to take it.
+        
+        Args:
+            assessment_id: Assessment's unique identifier
+            student_uid: Student's unique identifier
+            teacher_uid: Teacher's unique identifier
+            student_grade: Student's grade level
+            student_subjects: List of subjects student is enrolled in
+            
+        Returns:
+            Assessment object if accessible, None otherwise
+        """
+        try:
+            # Get the assessment
+            doc_ref = db.collection(self.assessments_collection).document(assessment_id)
+            doc = doc_ref.get()
+            
+            if not doc.exists:
+                return None
+            
+            assessment_data = doc.to_dict()
+            assessment = Assessment(**assessment_data)
+            
+            # Verify the assessment belongs to the student's teacher
+            if assessment.teacher_uid != teacher_uid:
+                logger.warning(f"Assessment {assessment_id} does not belong to student's teacher")
+                return None
+            
+            # Check if assessment is active
+            if not assessment.is_active:
+                logger.warning(f"Assessment {assessment_id} is not active")
+                return None
+            
+            # Check if assessment is suitable for this student
+            if not self._is_assessment_suitable_for_student(
+                assessment, student_grade, student_subjects
+            ):
+                logger.warning(f"Assessment {assessment_id} is not suitable for student {student_uid}")
+                return None
+            
+            # Remove correct answers for student view (security)
+            assessment = self._sanitize_assessment_for_student(assessment)
+            
+            logger.info(f"Retrieved assessment {assessment_id} for student {student_uid}")
+            return assessment
+            
+        except Exception as e:
+            logger.error(f"Failed to get assessment for student: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve assessment: {str(e)}"
+            )
+    
+    async def get_subjects_with_assessments(
+        self,
+        student_uid: str,
+        teacher_uid: str,
+        student_grade: int,
+        student_subjects: List[str]
+    ) -> List[str]:
+        """
+        Get list of subjects that have available assessments for the student.
+        
+        Args:
+            student_uid: Student's unique identifier
+            teacher_uid: Teacher's unique identifier
+            student_grade: Student's grade level
+            student_subjects: List of subjects student is enrolled in
+            
+        Returns:
+            List of subject names with available assessments
+        """
+        try:
+            # Get all active assessments from the student's teacher
+            query = (db.collection(self.assessments_collection)
+                    .where("teacher_uid", "==", teacher_uid)
+                    .where("is_active", "==", True))
+            
+            docs = query.get()
+            subjects_with_assessments = set()
+            
+            for doc in docs:
+                assessment_data = doc.to_dict()
+                assessment = Assessment(**assessment_data)
+                
+                # Check if assessment is suitable for this student
+                if self._is_assessment_suitable_for_student(
+                    assessment, student_grade, student_subjects
+                ):
+                    subjects_with_assessments.add(assessment.subject)
+            
+            return sorted(list(subjects_with_assessments))
+            
+        except Exception as e:
+            logger.error(f"Failed to get subjects with assessments: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve subjects: {str(e)}"
+            )
+    
+    async def get_student_assessment_summary(
+        self,
+        student_uid: str,
+        teacher_uid: str,
+        student_grade: int,
+        student_subjects: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Get assessment statistics and summary for a student.
+        
+        Args:
+            student_uid: Student's unique identifier
+            teacher_uid: Teacher's unique identifier
+            student_grade: Student's grade level
+            student_subjects: List of subjects student is enrolled in
+            
+        Returns:
+            Dictionary with assessment statistics
+        """
+        try:
+            # Get all available assessments
+            all_assessments = await self.get_student_assessments(
+                student_uid, teacher_uid, student_grade, student_subjects, status_filter='all'
+            )
+            
+            # Get completed assessments
+            completed_assessment_ids = await self._get_completed_assessment_ids(student_uid)
+            
+            # Calculate statistics
+            total_assessments = len(all_assessments)
+            completed_assessments = len(completed_assessment_ids)
+            pending_assessments = total_assessments - completed_assessments
+            
+            # Group by subject
+            subject_stats = {}
+            for assessment in all_assessments:
+                subject = assessment.subject
+                if subject not in subject_stats:
+                    subject_stats[subject] = {
+                        "total": 0,
+                        "completed": 0,
+                        "pending": 0
+                    }
+                
+                subject_stats[subject]["total"] += 1
+                if assessment.assessment_id in completed_assessment_ids:
+                    subject_stats[subject]["completed"] += 1
+                else:
+                    subject_stats[subject]["pending"] += 1
+            
+            # Get recent assessment results
+            recent_results = await self._get_recent_assessment_results(student_uid, limit=5)
+            
+            return {
+                "total_assessments": total_assessments,
+                "completed_assessments": completed_assessments,
+                "pending_assessments": pending_assessments,
+                "completion_rate": round((completed_assessments / total_assessments * 100) if total_assessments > 0 else 0, 1),
+                "subject_breakdown": subject_stats,
+                "enrolled_subjects": student_subjects,
+                "recent_results": recent_results,
+                "student_grade": student_grade
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get student assessment summary: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve assessment summary: {str(e)}"
+            )
+    
+    # ====================================================================
+    # Helper Methods for Student Assessments
+    # ====================================================================
+    
+    def _is_assessment_suitable_for_student(
+        self,
+        assessment: Assessment,
+        student_grade: int,
+        student_subjects: List[str],
+        subject_filter: Optional[str] = None
+    ) -> bool:
+        """
+        Check if an assessment is suitable for a student based on grade and subjects.
+        
+        Args:
+            assessment: Assessment object
+            student_grade: Student's grade level
+            student_subjects: List of subjects student is enrolled in
+            subject_filter: Optional subject filter
+            
+        Returns:
+            True if assessment is suitable, False otherwise
+        """
+        # Check if student is enrolled in the assessment's subject
+        if assessment.subject not in student_subjects:
+            return False
+        
+        # Apply subject filter if specified
+        if subject_filter and assessment.subject != subject_filter:
+            return False
+        
+        # Check grade compatibility (allow assessments for same grade or one grade below/above)
+        grade_difference = abs(assessment.target_grade - student_grade)
+        if grade_difference > 1:
+            return False
+        
+        return True
+    
+    def _sanitize_assessment_for_student(self, assessment: Assessment) -> Assessment:
+        """
+        Remove sensitive information from assessment for student view.
+        
+        Args:
+            assessment: Original assessment object
+            
+        Returns:
+            Sanitized assessment object
+        """
+        # Create a copy of the assessment
+        sanitized_data = assessment.dict()
+        
+        # Remove correct answers from questions
+        if 'questions' in sanitized_data:
+            for question in sanitized_data['questions']:
+                if 'correct_answer' in question:
+                    del question['correct_answer']
+                if 'explanation' in question:
+                    del question['explanation']
+        
+        return Assessment(**sanitized_data)
+    
+    async def _get_completed_assessment_ids(self, student_uid: str) -> set:
+        """
+        Get set of assessment IDs that the student has completed.
+        
+        Args:
+            student_uid: Student's unique identifier
+            
+        Returns:
+            Set of completed assessment IDs
+        """
+        try:
+            query = (db.collection(self.assessment_results_collection)
+                    .where("student_id", "==", student_uid))
+            
+            docs = query.get()
+            completed_ids = set()
+            
+            for doc in docs:
+                result_data = doc.to_dict()
+                completed_ids.add(result_data.get('assessment_id'))
+            
+            return completed_ids
+            
+        except Exception as e:
+            logger.error(f"Failed to get completed assessment IDs: {e}")
+            return set()
+    
+    async def _get_recent_assessment_results(
+        self, 
+        student_uid: str, 
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent assessment results for a student.
+        
+        Args:
+            student_uid: Student's unique identifier
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of recent assessment results
+        """
+        try:
+            query = (db.collection(self.assessment_results_collection)
+                    .where("student_id", "==", student_uid)
+                    .order_by("completed_at", direction="DESCENDING")
+                    .limit(limit))
+            
+            docs = query.get()
+            results = []
+            
+            for doc in docs:
+                result_data = doc.to_dict()
+                results.append({
+                    "assessment_id": result_data.get("assessment_id"),
+                    "subject": result_data.get("subject"),
+                    "score": result_data.get("score"),
+                    "total_questions": result_data.get("total_questions"),
+                    "completed_at": result_data.get("completed_at"),
+                    "time_taken_minutes": result_data.get("time_taken_minutes")
+                })
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to get recent assessment results: {e}")
+            return []
 
 # Create singleton instance
 student_service = StudentService()
