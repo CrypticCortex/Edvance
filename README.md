@@ -61,16 +61,21 @@ Before testing the backend, ensure you have:
    pip install -r requirements.txt
    ```
 
-3. **Configure Environment Variables:**
+3. **Configure Environment Variables (.env inside edvance-ai-backend folder):**
    ```bash
-   # Set your Google Cloud credentials
-   export GOOGLE_APPLICATION_CREDENTIALS="./svc-acc-key.json"
-   
-   # Create .env file with required configuration
-   echo "FIREBASE_PROJECT_ID=your-project-id" > .env
-   echo "FIREBASE_STORAGE_BUCKET=your-bucket-name" >> .env
-   echo "GOOGLE_CLOUD_PROJECT=your-project-id" >> .env
-   echo "GOOGLE_CLOUD_LOCATION=us-west1" >> .env
+   GOOGLE_APPLICATION_CREDENTIALS="svc-acc-key.json"
+
+FIREBASE_PROJECT_ID=""
+
+FIREBASE_STORAGE_BUCKET=""
+
+GOOGLE_GENAI_USE_VERTEXAI=TRUE
+
+GEMINI_API_KEY=""
+
+GOOGLE_CLOUD_PROJECT=""
+
+GOOGLE_CLOUD_LOCATION=""
    ```
 
 4. **Start the Development Server:**
